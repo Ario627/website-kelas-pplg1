@@ -1,30 +1,33 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { Injectable, UnauthorizedException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { User, UserRole } from "./user.entities";
+import { User, RegistrationStatus } from "./user.entities";
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectRepository(User)
-    private usersRepository: Repository<User>,
+    private readonly usersRepositiry: Repository<User>,
   ) { }
 
   async create(createUserDto: Partial<User>): Promise<User> {
-    const user = this.usersRepository.create(createUserDto);
-    return this.usersRepository.save(user);
+    const user = this.usersRepositiry.create(createUserDto);
+    const savedUser = await this.usersRepositiry.save(user);
+    this.logger.log(`User created with ID: ${savedUser.id}`);
+    return savedUser;
   }
 
   async findAll(): Promise<User[]> {
-    return this.usersRepository.find({
-      select: ['id', 'name', 'email', 'role', 'isActive', 'createdAt', 'updatedAt'],
+    return this.usersRepositiry.find({
+      select: ['id', 'name', 'email', 'role', 'registrationStatus', 'isActive', 'lastLoginAt'],
+      order: { id: 'DESC' },
     });
   }
 
   async findOne(id: number): Promise<User> {
-    const user = await this.usersRepository.findOne({
-      where: { id },
-    });
+    const user = await this.usersRepositiry.findOne({ where: { id } });
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
@@ -32,17 +35,30 @@ export class UsersService {
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return this.usersRepository.findOne({ where: { email } });
+    return this.usersRepositiry.findOne({ where: { email } });
   }
 
   async update(id: number, updateUserDto: Partial<User>): Promise<User> {
-    await this.findOne(id); // Ensure user exists
-    await this.usersRepository.update(id, updateUserDto);
-    return this.findOne(id);
+    const user = await this.findOne(id);
+    Object.assign(user, updateUserDto);
+    return this.usersRepositiry.save(user);
   }
 
   async remove(id: number): Promise<void> {
-    await this.findOne(id); // Ensure user exists
-    await this.usersRepository.delete(id);
+    const user = await this.usersRepositiry.findOne({ where: { id } });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    await this.usersRepositiry.remove(user);
+    this.logger.log(`User with ID: ${id} has been removed`);
   }
+
+  async updateLoginInfo(id: number, ipAddress?: string): Promise<void> {
+    await this.usersRepositiry.update(id, {
+      lastLoginAt: new Date(),
+      lastLoginIp: ipAddress || null,
+    });
+  }
+
+
 }

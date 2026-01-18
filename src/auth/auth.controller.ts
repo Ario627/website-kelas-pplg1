@@ -1,22 +1,58 @@
 import { AuthService } from "./auth.service";
+import { JwtAuthGuard } from "src/common/guards/jwt.guard";
+import type { Request, Response } from "express";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
-import { Body, Controller, Post, HttpCode, HttpStatus } from "@nestjs/common";
+import { Roles } from "src/common/decorators/roles.decorators";
+import { RolesGuard } from "src/common/guards/role.guard";
+import { User, UserRole } from "src/users/entities/user.entities";
+import { SkipThrottle, Throttle } from "@nestjs/throttler";
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+  Req,
+  Res,
+  UseGuards,
+  ParseUUIDPipe,
+} from '@nestjs/common';
+
 
 @Controller('auth')
 export class AuthController {
-  constructor(
-    private authService: AuthService
-  ) { }
+  constructor(private readonly authService: AuthService) { }
 
   @Post('register')
-  async register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+  @Throttle({ short: { ttl: 60000, limit: 5 } })
+  async register(@Body() registerDto: RegisterDto, @Req() req: Request) {
+    const ipAddres = this.getClientIp(req);
+    const userAgent = req.headers['user-agent'];
+    return this.authService.register(registerDto, ipAddres, userAgent);
+  }
+
+  private getClientIp(req: Request): string {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string') {
+      return forwarded.split(',')[0];
+    }
+    if (Array.isArray(forwarded)) {
+      return forwarded[0];
+    }
+
+    return req.ip || req.socket?.remoteAddress || 'Unknown';
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  @Throttle({ short: { ttl: 60000, limit: 10 } })
+  async login(@Body() loginDto: LoginDto, @Req() req: Request) {
+    const ipAddres = this.getClientIp(req);
+    const userAgent = req.headers['user-agent'];
+    return this.authService.login(loginDto, ipAddres, userAgent);
   }
 }

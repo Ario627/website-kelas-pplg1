@@ -1,14 +1,22 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
-import { AuthService } from "./auth.service";
+import { UsersService } from "src/users/entities/users.service";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from "@nestjs/config";
+import { RegistrationStatus } from "src/users/entities/user.entities";
 
+interface JwtPayload {
+  sub: number;
+  email: string;
+  role: string;
+  iat?: number;
+  exp?: number;
+}
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
-    private authService: AuthService,
+    private usersService: UsersService,
     private configService: ConfigService,
   ) {
     super({
@@ -18,10 +26,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
-    const user = await this.authService.validateUser(payload.sub);
+  async validate(payload: JwtPayload) {
+    const user = await this.usersService.findOne(payload.sub)
     if (!user) {
       throw new UnauthorizedException('Invalid token');
+    }
+
+    if (user.registrationStatus !== RegistrationStatus.APPROVED) {
+      throw new UnauthorizedException('User registration not approved');
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('User account is inactive');
     }
 
     return user;

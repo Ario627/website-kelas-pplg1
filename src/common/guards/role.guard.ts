@@ -13,7 +13,7 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    if (!requireRoles) {
+    if (!requireRoles || requireRoles.length === 0) {
       return true;
     }
 
@@ -23,6 +23,7 @@ export class RolesGuard implements CanActivate {
     }
 
     const hasRole = requireRoles.some((role) => user.role === role);
+
     if (!hasRole) {
       throw new ForbiddenException('User does not have required role');
     }
