@@ -7,7 +7,7 @@
 
 Backend API untuk website kelas menggunakan **NestJS 11**, **TypeORM**, dan **PostgreSQL**. 
 
-![NestJS](https://img.shields.io/badge/NestJS-11.1.11-red? style=flat-square&logo=nestjs)
+![NestJS](https://img.shields.io/badge/NestJS-11.1.11-red?style=flat-square&logo=nestjs)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?style=flat-square&logo=typescript)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?style=flat-square&logo=postgresql)
 
