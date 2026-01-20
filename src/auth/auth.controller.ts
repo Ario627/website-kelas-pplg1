@@ -55,4 +55,36 @@ export class AuthController {
     const userAgent = req.headers['user-agent'];
     return this.authService.login(loginDto, ipAddres, userAgent);
   }
+
+  @Get('approve/:token')
+  @SkipThrottle()
+  async approveFromEmail(
+    @Param('token', ParseUUIDPipe) token: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const result = await this.authService.approveRegistration(token)
+      return res.status(200).json({
+        message: 'Registration approved successfully',
+        wouldRedirectTo: result.redirectUrl
+      })
+    } catch (error) {
+      return res.redirect(`/error?message=${encodeURIComponent(error.message)}`);
+    }
+  }
+
+  @Get('reject/:token')
+  @SkipThrottle()
+  async rejectFromEmail(
+    @Param('token', ParseUUIDPipe) token: string,
+    @Query('reason') reason: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const result = await this.authService.rejectRegristration(token, reason);
+      return res.redirect(result.redirectUrl);
+    } catch (error) {
+      return res.redirect(`/error?meesage=${encodeURIComponent(error.message)}`);
+    }
+  }
 }

@@ -60,5 +60,15 @@ export class UsersService {
     });
   }
 
+  async findBYRegistrationToken(token: string): Promise<User | null> {
+    return this.usersRepositiry.findOne({ where: { registrationToken: token } });
+  }
 
+  async findByStatus(status: RegistrationStatus): Promise<User[]> {
+    return this.usersRepositiry.find({
+      where: { registrationStatus: status },
+      select: ['id', 'name', 'email', 'createdAt', 'registrationToken'],
+      order: { createdAt: 'DESC' }
+    });
+  }
 }

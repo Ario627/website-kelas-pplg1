@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { UsersService } from "src/users/entities/users.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
@@ -7,7 +7,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { RegistrationStatus, UserRole } from "src/users/entities/user.entities";
-import { access } from "node:fs";
 
 
 @Injectable()
@@ -55,6 +54,7 @@ export class AuthService {
       message: 'Registration successful',
       status: 'approved',
       emaill: user.email,
+      debugToken: process.env.NODE_ENV === 'development' ? registrationToken : undefined,
     };
   }
 
@@ -92,5 +92,57 @@ export class AuthService {
     };
   }
 
+  async approveRegistration(token: string, adminIs?: number) {
+    const user = await this.usersService.findBYRegistrationToken(token);
 
+    if (!user) {
+      throw new BadRequestException('Invalid registration token');
+    }
+
+    if (user.registrationStatus !== RegistrationStatus.PENDING) {
+      throw new BadRequestException('User registration is not pending');
+    }
+
+    await this.usersService.update(user.id, {
+      registrationStatus: RegistrationStatus.APPROVED,
+      registrationToken: null,
+      approvedAt: new Date(),
+    });
+
+    this.logger.log(`User registration approved: ${user.email} by Admin ID: ${adminIs}`);
+
+    return {
+      message: `Registration for ${user.email} has been approved`,
+      redirectUrl: `${this.frontendUrl}/admin/registration-approved`,
+    };
+  }
+
+  async rejectRegristration(token: string, reason?: string) {
+    const user = await this.usersService.findBYRegistrationToken(token);
+
+    if (!user) {
+      throw new BadRequestException('Invalid registration token');
+    }
+
+    if (user.registrationStatus !== RegistrationStatus.PENDING) {
+      throw new BadRequestException('User registration is not pending');
+    }
+
+    await this.usersService.update(user.id, {
+      registrationStatus: RegistrationStatus.REJECTED,
+      registrationToken: null,
+      rejectionReason: reason || 'No reason provided',
+    });
+
+    this.logger.log(`User registration rejected: ${user.email}. Reason: ${reason || 'No reason provided'}`);
+
+    return {
+      message: `Registration for ${user.email} has been rejected`,
+      redirectUrl: `${this.frontendUrl}/admin/registration-rejected`,
+    }
+  }
+
+  async getPendingRegistrations() {
+    return this.usersService.findByStatus(RegistrationStatus.PENDING);
+  }
 }
