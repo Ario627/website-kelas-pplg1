@@ -1,5 +1,4 @@
-# 🏫 Class Website Backend 
-# ======================================
+# Class Website Backend PPLG 1
 
 > [!WARNING]
 > ⚠️ **Masih dalam pengembangan, fitur dapat berubah sewaktu-waktu dan beberapa fitur mungkin belum selesai dikembangkan! 
