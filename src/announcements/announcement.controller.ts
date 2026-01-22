@@ -20,7 +20,7 @@ import {
 // Kurang yang current user nya aja, lagi males anjir
 
 @Controller('announcements')
-export class announcementController {
+export class AnnouncementController {
   constructor(private readonly announcementService: AnnouncementService) { }
 
   @Get()
