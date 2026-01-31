@@ -56,6 +56,8 @@ export class AuthController {
     return this.authService.login(loginDto, ipAddres, userAgent);
   }
 
+
+
   @Get('approve/:token')
   @SkipThrottle()
   async approveFromEmail(

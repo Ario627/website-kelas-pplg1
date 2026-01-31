@@ -25,7 +25,7 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
 
   app.enableCors({
-    origin: configService.get<string>('FRONTEND_URL', '*'),
+    origin: configService.get<string>('FRONTEND_URL', 'http://localhost:3001'),
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],

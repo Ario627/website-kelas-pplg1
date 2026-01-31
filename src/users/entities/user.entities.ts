@@ -28,6 +28,9 @@ export class User {
   @Column()
   password: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  refreshToken: string | null;
+
   @Column({
     type: 'enum',
     enum: UserRole,

@@ -6,7 +6,7 @@ import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
-import { RegistrationStatus, UserRole } from "src/users/entities/user.entities";
+import { RegistrationStatus, User, UserRole } from "src/users/entities/user.entities";
 
 
 @Injectable()
@@ -25,6 +25,35 @@ export class AuthService {
     this.requireApproval = this.configService.get<string>('REQUIRE_ADMIN_APPROVAL', 'true') === 'true';
     this.frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
     this.backendUrl = this.configService.get<string>('BACKEND_URL', 'http://localhost:3000');
+  }
+
+  //Pembuat access token dan refresh token dengan HELPER
+  async getTokens(userId: number, email: string, role: UserRole) {
+    const payload = { sub: userId, email, role };
+
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: this.configService.get<string>('JWT_ACCESS'),
+        expiresIn: '15m',
+      }),
+      this.jwtService.signAsync(payload, {
+        secret: this.configService.get<string>('JWT_REFRESH'),
+        expiresIn: '7d',
+      }),
+    ]);
+
+    return {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    };
+  }
+
+  // Menyimpan refresh token yang sudah di hash ke database
+  private async updateRefreshToken(userId: number, refreshToken: string) {
+    const hash = await bcrypt.hash(refreshToken, 10);
+    await this.usersService.update(userId, {
+      refreshToken: hash,
+    });
   }
 
   async register(registerDto: RegisterDto, ipAddress?: string, userAgent?: string) {
@@ -62,11 +91,14 @@ export class AuthService {
     const user = await this.usersService.findByEmail(loginDto.email);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
-    } else if (user.registrationStatus === RegistrationStatus.PENDING) {
+    }
+    if (user.registrationStatus === RegistrationStatus.PENDING) {
       throw new ForbiddenException('Invalid credentials');
-    } else if (user.registrationStatus === RegistrationStatus.REJECTED) {
+    }
+    if (user.registrationStatus === RegistrationStatus.REJECTED) {
       throw new ForbiddenException('User registration has been rejected');
-    } else if (!user.isActive) {
+    }
+    if (!user.isActive) {
       throw new ForbiddenException('User account is deactivated');
     }
 
@@ -77,18 +109,53 @@ export class AuthService {
 
     await this.usersService.updateLoginInfo(user.id, ipAddress);
 
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const tokens = await this.getTokens(user.id, user.email, user.role);
+
+    await this.updateRefreshToken(user.id, tokens.refresh_token);
 
     this.logger.log(`User logged in: ${user.email} from IP: ${ipAddress}`);
 
     return {
       message: 'Login successful',
-      access_token: this.jwtService.sign(payload),
+      ...tokens,
       user: {
         id: user.id,
         email: user.email,
         role: user.role,
       },
+    };
+  }
+
+  async logout(userId: number) {
+    await this.usersService.update(userId, {
+      refreshToken: null,
+    });
+
+    return { message: 'Logout successful' };
+  }
+
+  async refreshTokens(userId: number, refreshToken: string) {
+    const user = await this.usersService.findOne(userId);
+
+    if (!user || !user.refreshToken) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const refreshTokenValid = await bcrypt.compare(refreshToken, user.refreshToken);
+
+    if (!refreshTokenValid) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const token = await this.getTokens(user.id, user.email, user.role);
+
+    await this.updateRefreshToken(user.id, token.refresh_token);
+
+    this.logger.log(`Tokens refreshed for user: ${user.email}`);
+
+    return {
+      message: 'Tokens refreshed successfully',
+      ...token,
     };
   }
 
@@ -145,4 +212,6 @@ export class AuthService {
   async getPendingRegistrations() {
     return this.usersService.findByStatus(RegistrationStatus.PENDING);
   }
+
+
 }

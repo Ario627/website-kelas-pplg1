@@ -41,7 +41,7 @@ export class Announcement {
   @Column({ default: true })
   isActive: boolean;
 
-  @Column({ type: 'timestamptz' })
+  @Column({ type: 'timestamptz', nullable: true })
   expiresAt: Date | null;
 
   @ManyToOne(() => User, { onDelete: 'SET NULL' })

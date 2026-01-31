@@ -41,7 +41,7 @@ export class GalleryItem {
   imageUrl: string | null;
 
   @Column({ length: 500, nullable: true })
-  thumbnailUrl: number | null;
+  thumbnailUrl: string | null;
 
   @Column({ type: 'int', nullable: true })
   width: number | null;
@@ -72,6 +72,9 @@ export class GalleryItem {
 
   @CreateDateColumn({ type: 'timestamptz' })
   uploadedAt: Date;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  createdAt: Date;
 
 }
 
