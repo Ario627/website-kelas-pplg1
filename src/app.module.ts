@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { User } from './users/entities/user.entities';
 import { AnnouncementModule } from './announcements/announcement.module';
+import { StatsModule } from './stats/stats.module';
 // Masih ada yang lainnnya tapi nanti ya belum di bikin
 
 @Module({
@@ -36,6 +37,7 @@ import { AnnouncementModule } from './announcements/announcement.module';
     AuthModule,
     UsersModule,
     AnnouncementModule,
+    StatsModule,
   ],
 })
 

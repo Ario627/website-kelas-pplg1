@@ -1,4 +1,4 @@
-import { ColdObservable } from 'rxjs/internal/testing/ColdObservable';
+
 import { Column, Index, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
 export enum UserRole {
@@ -28,8 +28,11 @@ export class User {
   @Column()
   password: string;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'text', nullable: true })
   refreshToken: string | null;
+
+  @Column({ type: 'int', default: 0 })
+  tokenVersion: number;
 
   @Column({
     type: 'enum',

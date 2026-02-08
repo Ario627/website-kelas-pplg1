@@ -15,17 +15,26 @@ import {
   Param,
   Body,
   UseGuards,
-  ParseIntPipe
 } from "@nestjs/common"
-// Kurang yang current user nya aja, lagi males anjir
 
 @Controller('announcements')
 export class AnnouncementController {
   constructor(private readonly announcementService: AnnouncementService) { }
 
   @Get()
-  findActive() {
-    return this.announcementService.findActive();
+  async findActive() {
+    const announcements = await this.announcementService.findActive();
+    return {
+      data: announcements,
+      meta: {
+        total: announcements.length,
+        page: 1,
+        limit: announcements.length,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPrevPage: false,
+      }
+    };
   }
 
   @Get('all')
@@ -35,8 +44,20 @@ export class AnnouncementController {
     return this.announcementService.findAll();
   }
 
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async findMyAnnouncements(@CurrentUser() user: User) {
+    const announcements = await this.announcementService.findByAuthor(user.id);
+    return {
+      data: announcements,
+      meta: {
+        total: announcements.length,
+      }
+    };
+  }
+
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(@Param('id') id: string) {
     return this.announcementService.findOne(id);
   }
 
@@ -51,7 +72,7 @@ export class AnnouncementController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id') id: string,
     @Body() updateDto: UpdateAnnouncementDto,
   ) {
     return this.announcementService.update(id, updateDto)
@@ -60,7 +81,7 @@ export class AnnouncementController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id') id: string) {
     return this.announcementService.remove(id);
   }
 }

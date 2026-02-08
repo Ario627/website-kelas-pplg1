@@ -45,6 +45,11 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+/tmp
+
+# appmap
+.appmap
+appmap.yml
 
 # Runtime data
 pids

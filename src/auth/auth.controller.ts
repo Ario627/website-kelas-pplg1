@@ -21,6 +21,7 @@ import {
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import { CurrentUser } from "src/common/decorators/current-user.decorators";
 
 
 @Controller('auth')
@@ -59,7 +60,8 @@ export class AuthController {
 
 
   @Get('approve/:token')
-  @SkipThrottle()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async approveFromEmail(
     @Param('token', ParseUUIDPipe) token: string,
     @Res() res: Response,
@@ -76,7 +78,8 @@ export class AuthController {
   }
 
   @Get('reject/:token')
-  @SkipThrottle()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async rejectFromEmail(
     @Param('token', ParseUUIDPipe) token: string,
     @Query('reason') reason: string,
@@ -88,5 +91,11 @@ export class AuthController {
     } catch (error) {
       return res.redirect(`/error?meesage=${encodeURIComponent(error.message)}`);
     }
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async me(@CurrentUser() user: User) {
+    return this.authService.getCurrentUser(user.id)
   }
 }

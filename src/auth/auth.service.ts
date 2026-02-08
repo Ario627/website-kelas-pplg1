@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { RegistrationStatus, User, UserRole } from "src/users/entities/user.entities";
+import { MeResponse } from "./dto/response.dto";
 
 
 @Injectable()
@@ -24,7 +25,7 @@ export class AuthService {
   ) {
     this.requireApproval = this.configService.get<string>('REQUIRE_ADMIN_APPROVAL', 'true') === 'true';
     this.frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
-    this.backendUrl = this.configService.get<string>('BACKEND_URL', 'http://localhost:3000');
+    this.backendUrl = this.configService.get<string>('BACKEND_URL', 'http://localhost:3000/api');
   }
 
   //Pembuat access token dan refresh token dengan HELPER
@@ -75,7 +76,7 @@ export class AuthService {
       registrationStatus,
       registrationToken: this.requireApproval ? registrationToken : null,
       approvedAt: this.requireApproval ? null : new Date(),
-    }); ``
+    });
 
     this.logger.log(`New user registered: ${user.email} from IP: ${ipAddress}, User-Agent: ${userAgent}`);
 
@@ -213,5 +214,17 @@ export class AuthService {
     return this.usersService.findByStatus(RegistrationStatus.PENDING);
   }
 
-
+  async getCurrentUser(userId: number): Promise<MeResponse> {
+    const user = await this.usersService.findOne(userId);
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      registrationStatus: user.registrationStatus,
+      isActive: user.isActive,
+      lasLoginAt: user.lastLoginAt,
+      createdAt: user.createdAt,
+    };
+  }
 }

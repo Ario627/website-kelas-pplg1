@@ -35,30 +35,30 @@ export class GalleryItem {
   type: GalleryType;
 
   @Column({ length: 250, nullable: true })
-  cloudinaryPublicId: string | null;
+  cloudinaryPublicId: string;
 
   @Column({ length: 500, nullable: true })
-  imageUrl: string | null;
+  imageUrl: string;
 
   @Column({ length: 500, nullable: true })
-  thumbnailUrl: string | null;
+  thumbnailUrl: string;
 
   @Column({ type: 'int', nullable: true })
-  width: number | null;
+  width: number;
 
   @Column({ type: 'int', nullable: true })
-  height: number | null;
+  height: number;
 
   //For video
   @Column({ length: 20, nullable: true })
-  youtubeVideoId: string | null;
+  youtubeVideoId: string;
 
   //Metadata
   @Column({ length: 100, nullable: true })
-  category: string | null;
+  category: string;
 
   @Column({ type: 'jsonb', nullable: true })
-  tags: string[] | null;
+  tags: string[];
 
   @Column({ type: 'int', default: 0 })
   order: number;
@@ -68,7 +68,7 @@ export class GalleryItem {
   uploadedBy: User;
 
   @Column({ nullable: true })
-  uploadedById: number | null;
+  uploadedById: number;
 
   @CreateDateColumn({ type: 'timestamptz' })
   uploadedAt: Date;

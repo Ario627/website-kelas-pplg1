@@ -59,9 +59,9 @@ export class AnnouncementService {
     });
   }
 
-  async findOne(id: number): Promise<Announcement> {
+  async findOne(id: string): Promise<Announcement> {
     const announcement = await this.announcementRepository.findOne({
-      where: { id },
+      where: { id: id as any },
       relations: ['author'],
     });
 
@@ -72,7 +72,21 @@ export class AnnouncementService {
     return announcement;
   }
 
-  async update(id: number, updateDto: UpdateAnnouncementDto): Promise<Announcement> {
+  async findByAuthor(authorId: number): Promise<Announcement[]> {
+    return this.announcementRepository.find({
+      where: { authorId },
+      relations: ['author'],
+      order: { createdAt: 'DESC' },
+      select: {
+        author: {
+          id: true,
+          name: true,
+        },
+      },
+    });
+  }
+
+  async update(id: string, updateDto: UpdateAnnouncementDto): Promise<Announcement> {
     const announcement = await this.findOne(id);
 
     Object.assign(announcement, {
@@ -83,7 +97,7 @@ export class AnnouncementService {
     return this.announcementRepository.save(announcement)
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: string): Promise<void> {
     const announcement = await this.findOne(id);
 
     await this.announcementRepository.remove(announcement);

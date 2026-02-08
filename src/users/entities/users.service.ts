@@ -71,4 +71,29 @@ export class UsersService {
       order: { createdAt: 'DESC' }
     });
   }
+
+  // Yang baru
+  async updateRefreshToken(id: number, refreshToken: string | null): Promise<void> {
+    await this.usersRepositiry.update({ id }, { refreshToken });
+  }
+
+  async incrementTokenVersion(id: number): Promise<void> {
+    await this.usersRepositiry.increment({ id }, 'tokenVersion', 1);
+  }
+
+  async findOneWithRefreshToken(id: number): Promise<User | null> {
+    return this.usersRepositiry.findOne({
+      where: { id },
+      select: [
+        'id', 'email', 'name', 'role', 'registrationStatus',
+        'isActive', 'refreshToken', 'tokenVersion'
+      ],
+    });
+  }
+
+  async countPending(): Promise<number> {
+    return this.usersRepositiry.count({
+      where: { registrationStatus: RegistrationStatus.PENDING }
+    });
+  }
 }
