@@ -170,8 +170,8 @@ SEND_LOGIN_ALERTS=true
 ## 🔑 Default Admin
 
 ```
-Email: admin@kelaskita. com
-Password: Admin123! 
+Email: ketua@kelas.com
+Password: KetuaKelas1357900
 ```
 
 ⚠️ **GANTI PASSWORD SETELAH LOGIN PERTAMA!**
