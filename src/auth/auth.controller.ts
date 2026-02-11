@@ -60,8 +60,8 @@ export class AuthController {
 
 
   @Get('approve/:token')
-  //@UseGuards(JwtAuthGuard, RolesGuard)
-  //@Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async approveFromEmail(
     @Param('token', ParseUUIDPipe) token: string,
     @Res() res: Response,
