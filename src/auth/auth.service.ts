@@ -34,7 +34,7 @@ export class AuthService {
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('JWT_ACCESS'),
+        secret: this.configService.get<string>('JWT_SECRET'),
         expiresIn: '15m',
       }),
       this.jwtService.signAsync(payload, {
@@ -118,11 +118,14 @@ export class AuthService {
 
     return {
       message: 'Login successful',
+      status: 'approved',
       ...tokens,
       user: {
         id: user.id,
         email: user.email,
+        name: user.name,
         role: user.role,
+        regristrationStatus: user.registrationStatus,
       },
     };
   }

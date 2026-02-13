@@ -96,4 +96,12 @@ export class UsersService {
       where: { registrationStatus: RegistrationStatus.PENDING }
     });
   }
+
+  async getPendingUsers(): Promise<User[]> {
+    return this.usersRepositiry.find({
+      where: { registrationStatus: RegistrationStatus.PENDING },
+      select: ['id', 'name', 'email', 'createdAt', 'registrationToken'],
+      order: { createdAt: 'DESC' }
+    });
+  }
 }

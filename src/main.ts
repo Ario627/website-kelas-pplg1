@@ -3,6 +3,7 @@ import { ValidationPipe, VersioningType } from "@nestjs/common";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { ConfigService } from "@nestjs/config";
 import { join } from "path";
+import cookieParser from 'cookie-parser';
 import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http.filter";
 
@@ -10,6 +11,8 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'debug', 'verbose'],
   });
+
+  app.use(cookieParser());
 
   const configService = app.get(ConfigService);
 
