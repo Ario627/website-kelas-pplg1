@@ -1,4 +1,6 @@
 import { User } from "src/users/entities/user.entities";
+import { AnnouncementsView } from "src/announcements/entities/announcements-view.entities";
+import { AnnouncementsReaction } from "./announcements-reaction.entities";
 import {
   Column,
   Entity,
@@ -7,7 +9,8 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
-  Index
+  Index,
+  OneToMany
 } from "typeorm";
 
 
@@ -19,11 +22,11 @@ export enum AnnouncementPriority {
 }
 
 @Entity('announcements')
-@Index(['isActive', 'expiresAt'])
+@Index(['isActive', 'expiresAt', 'isPinned'])
 @Index(['priority'])
 export class Announcement {
   @PrimaryGeneratedColumn('uuid')
-  id: number;
+  id: string;
 
   @Column({ length: 250 })
   title: string;
@@ -41,6 +44,21 @@ export class Announcement {
   @Column({ default: true })
   isActive: boolean;
 
+  @Column({ default: false })
+  isPinned: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  pinnedAt: Date | null;
+
+  @Column({ default: true })
+  enableViews: boolean;
+
+  @Column({ default: true })
+  enableReactions: boolean;
+
+  @Column({ type: 'int', default: 0 })
+  viewCount: number;
+
   @Column({ type: 'timestamptz', nullable: true })
   expiresAt: Date | null;
 
@@ -50,6 +68,12 @@ export class Announcement {
 
   @Column({ nullable: true })
   authorId: number;
+
+  @OneToMany(() => AnnouncementsReaction, (reaction) => reaction.announcement)
+  reactions: AnnouncementsReaction[];
+
+  @OneToMany(() => AnnouncementsView, (view) => view.announcement)
+  views: AnnouncementsView[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

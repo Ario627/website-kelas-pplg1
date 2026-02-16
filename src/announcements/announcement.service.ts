@@ -1,9 +1,16 @@
-import { UpdateAnnouncementDto } from "./dto/update-announcement.dto";
-import { CreateAnnouncementDto } from "./dto/create-announcement.dto";
-import { Announcement } from "./entities/announcements.entities";
-import { Injectable, NotFoundException, Logger } from "@nestjs/common";
+import { Injectable, NotFoundException, Logger, ConflictException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, MoreThan, IsNull, Or } from "typeorm";
+import { Repository, MoreThan, IsNull, In } from "typeorm";
+import { Announcement, AnnouncementPriority } from "./entities/announcements.entities";
+import { AnnouncementsReaction, ReactionType } from "./entities/announcements-reaction.entities";
+import { AnnouncementsView } from "./entities/announcements-view.entities";
+import { CreateAnnouncementDto } from "./dto/create-announcement.dto";
+import { UpdateAnnouncementDto } from "./dto/update-announcement.dto";
+import {
+  AnnouncementWithStats,
+  ReactionCount,
+  ViewerInfo
+} from './dto/announcements-response.dto';
 
 @Injectable()
 export class AnnouncementService {
@@ -11,97 +18,302 @@ export class AnnouncementService {
 
   constructor(
     @InjectRepository(Announcement)
-    private readonly announcementRepository: Repository<Announcement>
+    private readonly announcementRepo: Repository<Announcement>,
+    @InjectRepository(AnnouncementsReaction)
+    private readonly reactionRepo: Repository<AnnouncementsReaction>,
+    @InjectRepository(AnnouncementsView)
+    private readonly viewRepo: Repository<AnnouncementsView>,
   ) { }
 
-  async create(createDto: CreateAnnouncementDto, authorId: number): Promise<Announcement> {
-    const announcement: Announcement = this.announcementRepository.create({
-      ...createDto,
+  async create(dto: CreateAnnouncementDto, authorId: number): Promise<AnnouncementWithStats> {
+    const announcement = this.announcementRepo.create({
+      ...dto,
       authorId,
-      expiresAt: createDto.expiresAt ? new Date(createDto.expiresAt) : null,
+      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
     });
 
-    const save = await this.announcementRepository.save(announcement);
-    this.logger.log(`Announcement created: ${save.title} from author ID ${authorId}`);
-    return save;
+    const saved = await this.announcementRepo.save(announcement);
+
+    this.logger.log(`Announcement created with ID: ${saved.id} by User ID: ${authorId}`);
+    return this.findOne(saved.id);
   }
 
-  async findAll(): Promise<Announcement[]> {
-    return this.announcementRepository.find({
-      relations: ['author'],
-      order: { createdAt: 'DESC' },
-      select: {
-        author: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-    });
-  }
-
-  async findActive(): Promise<Announcement[]> {
-    const now = new Date();
-
-    return this.announcementRepository.find({
-      where: [
-        { isActive: true, expiresAt: MoreThan(now) },
-        { isActive: true, expiresAt: IsNull() },
-      ],
-      relations: ['author'],
-      order: { priority: 'DESC', createdAt: 'DESC' },
-      select: {
-        author: {
-          id: true,
-          name: true
-        },
-      },
-    });
-  }
-
-  async findOne(id: string): Promise<Announcement> {
-    const announcement = await this.announcementRepository.findOne({
-      where: { id: id as any },
-      relations: ['author'],
-    });
+  async findOne(id: string, userId?: number): Promise<AnnouncementWithStats> {
+    const announcement = await this.announcementRepo.findOne({ where: { id } });
 
     if (!announcement) {
-      throw new NotFoundException(`Announcement with ID ${id} not found`);
+      throw new NotFoundException('Announcements not found');
     }
 
-    return announcement;
+    return this.mapToAnnouncementWithStats(announcement, userId);
   }
 
-  async findByAuthor(authorId: number): Promise<Announcement[]> {
-    return this.announcementRepository.find({
-      where: { authorId },
-      relations: ['author'],
-      order: { createdAt: 'DESC' },
-      select: {
-        author: {
-          id: true,
-          name: true,
-        },
-      },
-    });
-  }
+  async update(id: string, dto: UpdateAnnouncementDto): Promise<AnnouncementWithStats> {
+    const announcement = await this.announcementRepo.findOne({ where: { id } });
 
-  async update(id: string, updateDto: UpdateAnnouncementDto): Promise<Announcement> {
-    const announcement = await this.findOne(id);
+    if (!announcement) {
+      throw new NotFoundException('Announcement not found')
+    }
+
+    if (dto.isPinned !== undefined && dto.isPinned !== announcement.isPinned) {
+      announcement.pinnedAt = dto.isPinned ? new Date() : null
+    }
 
     Object.assign(announcement, {
-      ...updateDto,
-      expiresAt: updateDto.expiresAt ? new Date(updateDto.expiresAt) : announcement.expiresAt,
+      ...dto,
+      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : announcement.expiresAt,
     });
 
-    return this.announcementRepository.save(announcement)
+    await this.announcementRepo.save(announcement)
+    return this.findOne(id)
   }
 
   async remove(id: string): Promise<void> {
-    const announcement = await this.findOne(id);
+    const announcement = await this.announcementRepo.findOne({ where: { id } });
 
-    await this.announcementRepository.remove(announcement);
+    if (!announcement) {
+      throw new NotFoundException('Announcement not found');
+    }
 
-    this.logger.log(`Announcement deleted: ID ${id}`);
+    await this.announcementRepo.remove(announcement);
+    this.logger.log(`Announcement with ID: ${id} has been removed`);
+  }
+
+  async addReaction(
+    announcementId: string,
+    userId: number | null,
+    reactionType: ReactionType,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ reaction: AnnouncementsReaction; counts: ReactionCount[] }> {
+    const announcement = await this.announcementRepo.findOne({ where: { id: announcementId } });
+
+    if (!announcement) {
+      throw new NotFoundException('Announcement not found');
+    }
+
+    if (!announcement.enableReactions) {
+      throw new ConflictException('Reactions are disabled for this announcement');
+    }
+
+    // Find existing reaction: by userId if logged in, by ipAddress if anonymous
+    let existing: AnnouncementsReaction | null = null;
+    if (userId) {
+      existing = await this.reactionRepo.findOne({
+        where: { announcementId, userId },
+      });
+    } else if (ipAddress) {
+      existing = await this.reactionRepo.findOne({
+        where: { announcementId, userId: IsNull() as any, ipAddress },
+      });
+    }
+
+    let reaction: AnnouncementsReaction;
+
+    if (existing) {
+      existing.reactionType = reactionType;
+      reaction = await this.reactionRepo.save(existing);
+    } else {
+      reaction = await this.reactionRepo.save(
+        this.reactionRepo.create({
+          announcementId,
+          userId: userId ?? undefined,
+          reactionType,
+          ipAddress: ipAddress || null,
+          userAgent: userAgent || null,
+        })
+      );
+    }
+
+    const counts = await this.getReactionCounts(announcementId);
+
+    this.logger.log(`User/Anonymous reacted with ${reactionType} to Announcement ID: ${announcementId}`);
+    return { reaction, counts };
+  }
+
+  async togglePin(id: string): Promise<AnnouncementWithStats> {
+    const announcement = await this.announcementRepo.findOne({ where: { id } });
+
+    if (!announcement) {
+      throw new NotFoundException('Announcement not found');
+    }
+
+    announcement.isPinned = !announcement.isPinned;
+    announcement.pinnedAt = announcement.isPinned ? new Date() : null;
+
+    await this.announcementRepo.save(announcement);
+    this.logger.log(`Announcement ${id} ${announcement.isPinned ? 'pinned' : 'unpinned'}`);
+
+    return this.findOne(id);
+  }
+
+  async removeReaction(announcementId: string, userId: number,): Promise<{ counts: ReactionCount[] }> {
+    const reaction = await this.reactionRepo.findOne({
+      where: { announcementId, userId },
+    });
+
+    if (reaction) {
+      await this.reactionRepo.remove(reaction);
+      this.logger.log(`User ID: ${userId} removed reaction from Announcement ID: ${announcementId}`);
+    }
+
+    const counts = await this.getReactionCounts(announcementId);
+    return { counts };
+  }
+
+
+
+  async findAll(userId?: number): Promise<AnnouncementWithStats[]> {
+    const announcement = await this.announcementRepo.find({
+      relations: ['author', 'reactions'],
+      order: { isPinned: 'DESC', createdAt: 'DESC' },
+      select: {
+        author: { id: true, name: true },
+      },
+    });
+    return Promise.all(
+      announcement.map((a) => this.mapToAnnouncementWithStats(a, userId))
+    );
+  }
+
+  async getReactionCounts(announcementId: string): Promise<ReactionCount[]> {
+    const result = await this.reactionRepo
+      .createQueryBuilder('r')
+      .select('r.reactionType', 'type')
+      .addSelect('COUNT(*)', 'count')
+      .where('r.announcementId = :id', { id: announcementId })
+      .groupBy('r.reactionType')
+      .getRawMany();
+
+    return result.map((r) => ({
+      type: r.type as ReactionType,
+      count: parseInt(r.count, 10),
+    }))
+  }
+
+  async getUserReaction(announcementId: string, userId: number): Promise<ReactionType | null> {
+    const reaction = await this.reactionRepo.findOne({
+      where: { announcementId, userId },
+    });
+    return reaction?.reactionType || null;
+  }
+
+  async recordView(
+    announcementId: string,
+    userId: number | null,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ isNewView: boolean; viewCount: number }> {
+    const announcement = await this.announcementRepo.findOne({
+      where: { id: announcementId },
+    });
+
+    if (!announcement) {
+      throw new NotFoundException('Pengumuman tidak ditemukan');
+    }
+
+    if (!announcement.enableViews) {
+      return { isNewView: false, viewCount: announcement.viewCount };
+    }
+
+    // Check existing view: by userId if logged in, by ipAddress if anonymous
+    let existing: AnnouncementsView | null = null;
+    if (userId) {
+      existing = await this.viewRepo.findOne({
+        where: { announcementId, userId },
+      });
+    } else if (ipAddress) {
+      existing = await this.viewRepo.findOne({
+        where: { announcementId, userId: IsNull() as any, ipAddress },
+      });
+    }
+
+    let isNewView = false;
+
+    if (!existing) {
+      // Record new view
+      await this.viewRepo.save(
+        this.viewRepo.create({
+          announcementId,
+          userId: userId ?? undefined,
+          ipAddress: ipAddress || null,
+          userAgent: userAgent || null,
+        })
+      );
+
+      // Increment view count
+      await this.announcementRepo.increment({ id: announcementId }, 'viewCount', 1);
+      announcement.viewCount++;
+      isNewView = true;
+
+      this.logger.debug(`View recorded for announcement ${announcementId} by ${userId ? 'user ' + userId : 'anonymous (' + ipAddress + ')'}`);
+    }
+
+    return { isNewView, viewCount: announcement.viewCount + (isNewView ? 1 : 0) };
+  }
+
+  async getViewers(announcementId: string): Promise<ViewerInfo[]> {
+    const views = await this.viewRepo.find({
+      where: { announcementId },
+      relations: ['user'],
+      order: { viewedAt: 'DESC' },
+    });
+
+    return views.map((v) => ({
+      id: v.user?.id ?? null,
+      name: v.user?.name ?? null,
+      viewedAt: v.viewedAt,
+    }));
+  }
+
+  async findActive(userId?: number): Promise<AnnouncementWithStats[]> {
+    const now = new Date();
+
+    const announcements = await this.announcementRepo
+      .createQueryBuilder('a')
+      .leftJoinAndSelect('a.author', 'author')
+      .leftJoinAndSelect('a.reactions', 'reactions')
+      .where('a.isActive = :active', { active: true })
+      .andWhere('(a.expiresAt IS NULL OR a.expiresAt > :now)', { now })
+      .orderBy('a.isPinned', 'DESC')
+      .addOrderBy('a.createdAt', 'DESC')
+      .getMany();
+
+    return Promise.all(
+      announcements.map((a) => this.mapToAnnouncementWithStats(a, userId))
+    );
+  }
+
+  async getViewCount(announcementId: string): Promise<number> {
+    return this.viewRepo.count({ where: { announcementId } });
+  }
+
+  private async mapToAnnouncementWithStats(announcement: Announcement, userId?: number): Promise<AnnouncementWithStats> {
+    const reactionCounts = await this.getReactionCounts(announcement.id);
+    const totalReactions = reactionCounts.reduce((sum, r) => sum + r.count, 0);
+
+    let userReaction: ReactionType | null = null;
+    if (userId) {
+      userReaction = await this.getUserReaction(announcement.id, userId);
+    }
+
+    return {
+      id: announcement.id,
+      title: announcement.title,
+      content: announcement.content,
+      priority: announcement.priority,
+      isActive: announcement.isActive,
+      isPinned: announcement.isPinned,
+      enableViews: announcement.enableViews,
+      enableReactions: announcement.enableReactions,
+      viewCount: announcement.viewCount,
+      expiresAt: announcement.expiresAt,
+      author: announcement.author ? { id: announcement.author.id, name: announcement.author.name } : { id: 0, name: 'Unknown' },
+      reactions: reactionCounts,
+      totalReactions,
+      userReaction,
+      createdAt: announcement.createdAt,
+      updatedAt: announcement.updatedAt,
+    };
   }
 }

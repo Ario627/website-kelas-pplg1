@@ -7,6 +7,9 @@ import { UsersModule } from './users/users.module';
 import { User } from './users/entities/user.entities';
 import { AnnouncementModule } from './announcements/announcement.module';
 import { StatsModule } from './stats/stats.module';
+import { JwtModule } from '@nestjs/jwt';
+import { JwtModuleOptions } from '@nestjs/jwt';
+import type { StringValue } from 'ms';
 // Masih ada yang lainnnya tapi nanti ya belum di bikin
 
 @Module({
@@ -15,6 +18,19 @@ import { StatsModule } from './stats/stats.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService): Promise<JwtModuleOptions> => ({
+        secret: configService.getOrThrow<string>('JWT_SECRET'),
+        signOptions: {
+          expiresIn: configService.getOrThrow<string>('JWT_EXPIRES_IN', '15m') as StringValue,
+        },
+      }),
+      inject: [ConfigService],
+      global: true,
+    }),
+
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {

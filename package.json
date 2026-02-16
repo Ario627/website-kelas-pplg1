@@ -27,8 +27,10 @@
     "@nestjs/mapped-types": "^2.1.0",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.12",
+    "@nestjs/platform-socket.io": "^11.1.13",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^11.0.0",
+    "@nestjs/websockets": "^11.1.13",
     "@thallesp/nestjs-better-auth": "^2.2.2",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
@@ -43,6 +45,7 @@
     "pg": "^8.17.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "socket.io": "^4.8.3",
     "streamifier": "^0.1.1",
     "typeorm": "^0.3.28",
     "uuid": "^13.0.0"
