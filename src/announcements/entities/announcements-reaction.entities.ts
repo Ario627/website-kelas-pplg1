@@ -22,6 +22,8 @@ export enum ReactionType {
 @Entity('announcements_reactions')
 @Index(['announcementId', 'userId'])
 @Index(['announcementId', 'reactionType'])
+@Index(['announcementId', 'visitorId'])
+@Index(['announcementId', 'fingerprintHash'])
 @Index(['announcementId', 'ipAddress'])
 export class AnnouncementsReaction {
   @PrimaryGeneratedColumn()
@@ -46,6 +48,12 @@ export class AnnouncementsReaction {
 
   @Column({ nullable: true })
   userId: number | null;
+
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  visitorId: string | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  fingerprintHash: string | null;
 
   @Column({ nullable: true, type: 'varchar' })
   ipAddress: string | null;

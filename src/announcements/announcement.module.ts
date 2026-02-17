@@ -6,6 +6,8 @@ import { AnnouncementsGateway } from './announcements.gateway';
 import { Announcement } from './entities/announcements.entities';
 import { AnnouncementsReaction } from './entities/announcements-reaction.entities';
 import { AnnouncementsView } from './entities/announcements-view.entities';
+import { IdentityModule } from 'src/common/identity/identity.module';
+
 
 @Module({
   imports: [
@@ -14,6 +16,7 @@ import { AnnouncementsView } from './entities/announcements-view.entities';
       AnnouncementsReaction,
       AnnouncementsView,
     ]),
+    IdentityModule,
   ],
   controllers: [AnnouncementController],
   providers: [AnnouncementService, AnnouncementsGateway],

@@ -10,6 +10,8 @@ import { StatsModule } from './stats/stats.module';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtModuleOptions } from '@nestjs/jwt';
 import type { StringValue } from 'ms';
+import { IdentityService } from './common/identity/identity';
+import { IdentityGuard } from './common/identity/identity.guard';
 // Masih ada yang lainnnya tapi nanti ya belum di bikin
 
 @Module({
@@ -70,6 +72,8 @@ import type { StringValue } from 'ms';
     AnnouncementModule,
     StatsModule,
   ],
+  providers: [IdentityService, IdentityGuard],
+  exports: [IdentityService, IdentityGuard],
 })
 
 export class AppModule implements NestModule {

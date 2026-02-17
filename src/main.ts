@@ -17,7 +17,7 @@ async function bootstrap() {
 
   app.use(cookieParser());
 
-  app.use(helmet)
+  app.use(helmet())
 
   const configService = app.get(ConfigService);
   const isProduction = configService.get<string>('NODE_ENV') === 'production';

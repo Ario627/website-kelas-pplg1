@@ -1,42 +1,50 @@
 import { User } from "src/users/entities/user.entities";
 import { Announcement } from "./announcements.entities";
 import {
-    Entity,
-    Column,
-    PrimaryGeneratedColumn,
-    CreateDateColumn,
-    ManyToOne,
-    JoinColumn,
-    Index
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  Index
 } from 'typeorm';
 
 @Entity('announcements_views')
-@Index(['announcementId'])
+@Index(['announcementId', 'userId'])
+@Index(['announcementId', 'visitorId'])
+@Index(['announcementId', 'fingerprintHash'])
 export class AnnouncementsView {
-    @PrimaryGeneratedColumn()
-    id: number;
+  @PrimaryGeneratedColumn()
+  id: number;
 
-    @ManyToOne(() => Announcement, (a) => a.views, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'announcementId' })
-    announcement: Announcement;
+  @ManyToOne(() => Announcement, (a) => a.views, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'announcementId' })
+  announcement: Announcement;
 
-    @Column()
-    announcementId: string;
+  @Column()
+  announcementId: string;
 
-    @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
-    @JoinColumn({ name: 'userId' })
-    user: User | null;
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'userId' })
+  user: User | null;
 
-    @Column({ nullable: true })
-    userId: number | null;
+  @Column({ nullable: true })
+  userId: number | null;
 
-    @Column({ type: 'varchar', nullable: true })
-    ipAddress: string | null;
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  visitorId: string | null;
 
-    @Column({ type: 'text', nullable: true })
-    userAgent: string | null;
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  fingerprintHash: string | null;
 
-    @CreateDateColumn({ type: 'timestamptz' })
-    viewedAt: Date;
+  @Column({ type: 'varchar', nullable: true })
+  ipAddress: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  userAgent: string | null;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  viewedAt: Date;
 
 }

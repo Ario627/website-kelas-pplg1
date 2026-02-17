@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger, ConflictException } from "@nestjs/common";
+import { Injectable, NotFoundException, Logger, ConflictException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, MoreThan, IsNull, In } from "typeorm";
 import { Announcement, AnnouncementPriority } from "./entities/announcements.entities";
@@ -6,11 +6,13 @@ import { AnnouncementsReaction, ReactionType } from "./entities/announcements-re
 import { AnnouncementsView } from "./entities/announcements-view.entities";
 import { CreateAnnouncementDto } from "./dto/create-announcement.dto";
 import { UpdateAnnouncementDto } from "./dto/update-announcement.dto";
+import { Identity, type ResolvedIdentity } from "src/common/identity/identity";
 import {
   AnnouncementWithStats,
   ReactionCount,
   ViewerInfo
 } from './dto/announcements-response.dto';
+import { AllowAnonymous } from "@thallesp/nestjs-better-auth";
 
 @Injectable()
 export class AnnouncementService {
@@ -79,58 +81,54 @@ export class AnnouncementService {
     this.logger.log(`Announcement with ID: ${id} has been removed`);
   }
 
+  //DSINI YAAAA
+
   async addReaction(
     announcementId: string,
-    userId: number | null,
     reactionType: ReactionType,
-    ipAddress?: string,
-    userAgent?: string,
+    identity: ResolvedIdentity,
   ): Promise<{ reaction: AnnouncementsReaction; counts: ReactionCount[] }> {
-    const announcement = await this.announcementRepo.findOne({ where: { id: announcementId } });
+    const announcement = await this.announcementRepo.findOne({
+      where: { id: announcementId },
+    });
 
-    if (!announcement) {
-      throw new NotFoundException('Announcement not found');
-    }
+    if (!announcement) throw new ForbiddenException('Announcement not found');
 
     if (!announcement.enableReactions) {
       throw new ConflictException('Reactions are disabled for this announcement');
     }
 
-    // Find existing reaction: by userId if logged in, by ipAddress if anonymous
-    let existing: AnnouncementsReaction | null = null;
-    if (userId) {
-      existing = await this.reactionRepo.findOne({
-        where: { announcementId, userId },
-      });
-    } else if (ipAddress) {
-      existing = await this.reactionRepo.findOne({
-        where: { announcementId, userId: IsNull() as any, ipAddress },
-      });
-    }
+    const existing = await this.findExistingRecord(
+      this.reactionRepo, 'announcementId', announcementId, identity,
+    );
 
     let reaction: AnnouncementsReaction;
 
     if (existing) {
       existing.reactionType = reactionType;
+
+      if (identity.userId && !existing.userId) existing.userId = identity.userId;
+      if (identity.visitorId && !existing.visitorId) existing.visitorId = identity.visitorId;
       reaction = await this.reactionRepo.save(existing);
     } else {
       reaction = await this.reactionRepo.save(
         this.reactionRepo.create({
           announcementId,
-          userId: userId ?? undefined,
+          userId: identity.userId ?? undefined,
+          visitorId: identity.visitorId ?? undefined,
+          fingerprintHash: identity.fingerprintHash ?? undefined,
           reactionType,
-          ipAddress: ipAddress || null,
-          userAgent: userAgent || null,
+          ipAddress: identity.ipAddress ?? undefined,
+          userAgent: identity.userAgent ?? undefined,
         })
-      );
+      )
     }
 
     const counts = await this.getReactionCounts(announcementId);
+    this.logger.log(`User ID: ${identity.userId ?? 'N/A'} reacted with ${reactionType} to Announcement ID: ${announcementId}`);
 
-    this.logger.log(`User/Anonymous reacted with ${reactionType} to Announcement ID: ${announcementId}`);
     return { reaction, counts };
   }
-
   async togglePin(id: string): Promise<AnnouncementWithStats> {
     const announcement = await this.announcementRepo.findOne({ where: { id } });
 
@@ -200,56 +198,47 @@ export class AnnouncementService {
 
   async recordView(
     announcementId: string,
-    userId: number | null,
-    ipAddress?: string,
-    userAgent?: string,
+    identity: ResolvedIdentity,
   ): Promise<{ isNewView: boolean; viewCount: number }> {
     const announcement = await this.announcementRepo.findOne({
       where: { id: announcementId },
     });
 
-    if (!announcement) {
-      throw new NotFoundException('Pengumuman tidak ditemukan');
-    }
+    if (!announcement) throw new ForbiddenException('Announcement not found');
 
     if (!announcement.enableViews) {
       return { isNewView: false, viewCount: announcement.viewCount };
     }
 
-    // Check existing view: by userId if logged in, by ipAddress if anonymous
-    let existing: AnnouncementsView | null = null;
-    if (userId) {
-      existing = await this.viewRepo.findOne({
-        where: { announcementId, userId },
-      });
-    } else if (ipAddress) {
-      existing = await this.viewRepo.findOne({
-        where: { announcementId, userId: IsNull() as any, ipAddress },
-      });
+    const existing = await this.findExistingRecord(
+      this.viewRepo, 'announcementId', announcementId, identity,
+    );
+
+    if (existing) {
+      if (identity.userId && !existing.userId) {
+        existing.userId = identity.userId;
+        await this.viewRepo.save(existing);
+        this.logger.log(`Existing view updated with User ID: ${identity.userId} for Announcement ID: ${announcementId}`);
+      }
+      return { isNewView: false, viewCount: announcement.viewCount };
     }
 
-    let isNewView = false;
+    await this.viewRepo.save(
+      this.viewRepo.create({
+        announcementId,
+        userId: identity.userId ?? undefined,
+        visitorId: identity.visitorId,
+        fingerprintHash: identity.fingerprintHash,
+        ipAddress: identity.ipAddress,
+        userAgent: identity.userAgent,
+      }),
+    );
 
-    if (!existing) {
-      // Record new view
-      await this.viewRepo.save(
-        this.viewRepo.create({
-          announcementId,
-          userId: userId ?? undefined,
-          ipAddress: ipAddress || null,
-          userAgent: userAgent || null,
-        })
-      );
+    await this.announcementRepo.increment({ id: announcementId }, 'viewCount', 1);
 
-      // Increment view count
-      await this.announcementRepo.increment({ id: announcementId }, 'viewCount', 1);
-      announcement.viewCount++;
-      isNewView = true;
+    this.logger.debug(`View recorded for ${announcementId} via ${identity.type} (${identity.identifier.substring(0, 8)}...)`);
 
-      this.logger.debug(`View recorded for announcement ${announcementId} by ${userId ? 'user ' + userId : 'anonymous (' + ipAddress + ')'}`);
-    }
-
-    return { isNewView, viewCount: announcement.viewCount + (isNewView ? 1 : 0) };
+    return { isNewView: true, viewCount: announcement.viewCount + 1 };
   }
 
   async getViewers(announcementId: string): Promise<ViewerInfo[]> {
@@ -286,6 +275,37 @@ export class AnnouncementService {
 
   async getViewCount(announcementId: string): Promise<number> {
     return this.viewRepo.count({ where: { announcementId } });
+  }
+
+  //HELPER
+  private async findExistingRecord<T extends { userId?: number | null; visitorId?: string | null; fingerprintHash?: string | null }>(
+    repo: Repository<T>,
+    targetColumn: string,
+    targetId: string,
+    identity: ResolvedIdentity,
+  ): Promise<T | null> {
+    if (identity.userId) {
+      const found = await repo.findOne({
+        where: { [targetColumn]: targetId, userId: identity.userId } as any,
+      });
+      if (found) return found;
+    }
+
+    if (identity.visitorId) {
+      const found = await repo.findOne({
+        where: { [targetColumn]: targetId, visitorId: identity.visitorId } as any,
+      });
+      if (found) return found;
+    }
+
+    if (identity.fingerprintHash) {
+      const found = await repo.findOne({
+        where: { [targetColumn]: targetId, fingerprintHash: identity.fingerprintHash } as any,
+      });
+      if (found) return found;
+    }
+
+    return null;
   }
 
   private async mapToAnnouncementWithStats(announcement: Announcement, userId?: number): Promise<AnnouncementWithStats> {

@@ -10,6 +10,8 @@ import { AnnouncementsGateway } from "./announcements.gateway";
 import type { Request } from "express"
 import { AddReactionDto } from "./dto/reaction.dto";
 import { OptionalJwtAuthGUard } from "src/common/guards/optional-jwt-auth.guard";
+import { IdentityGuard } from "src/common/identity/identity.guard";
+import { Identity, type ResolvedIdentity } from 'src/common/identity/identity';
 import {
   Controller,
   Get,
@@ -23,6 +25,7 @@ import {
   HttpStatus,
   Req,
 } from "@nestjs/common"
+import { identity } from "rxjs";
 
 @Controller('announcements')
 export class AnnouncementController {
@@ -95,30 +98,18 @@ export class AnnouncementController {
   }
 
   @Post(':id/reactions')
-  @UseGuards(OptionalJwtAuthGUard)
+  @UseGuards(OptionalJwtAuthGUard, IdentityGuard)
+  @HttpCode(HttpStatus.OK)
   async addReaction(
     @Param('id') id: string,
     @Body() dto: AddReactionDto,
-    @CurrentUser() user: User,
-    @Req() req: Request,
+    @Identity() identity: ResolvedIdentity,
   ) {
-    const ipAddress = this.getClientIp(req);
-    const userAgent = req.headers['user-agent'];
-
-    const result = await this.announcementService.addReaction(
-      id,
-      user?.id ?? null,
-      dto.reactionType,
-      ipAddress,
-      userAgent,
-    );
-
-    // Broadcast handled by gateway via socket event
-    return result;
+    return this.announcementService.addReaction(id, dto.reactionType, identity);
   }
 
   @Delete(':id/reactions')
-  @UseGuards(OptionalJwtAuthGUard)
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async removeReaction(
     @Param('id') id: string,
@@ -128,17 +119,14 @@ export class AnnouncementController {
   }
 
   @Post(':id/views')
-  @UseGuards(OptionalJwtAuthGUard)
+  @UseGuards(OptionalJwtAuthGUard, IdentityGuard)
   @HttpCode(HttpStatus.OK)
   async recordView(
     @Param('id') id: string,
-    @CurrentUser() user: User,
-    @Req() req: Request,
+    @Identity() identity: ResolvedIdentity,
   ) {
-    const ipAddress = this.getClientIp(req);
-    const userAgent = req.headers['user-agent'];
 
-    return this.announcementService.recordView(id, user?.id ?? null, ipAddress, userAgent);
+    return this.announcementService.recordView(id, identity);;
   }
 
   @Get(':id/viewers')
@@ -148,12 +136,5 @@ export class AnnouncementController {
     return this.announcementService.getViewers(id);
   }
 
-  //Helper
-  private getClientIp(req: Request): string {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string') {
-      return forwarded.split(',')[0].trim();
-    }
-    return req.ip || req.socket?.remoteAddress || 'Unknown';
-  }
+
 }

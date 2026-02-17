@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AnnouncementService } from './announcement.service';
 import { ReactionType } from './entities/announcements-reaction.entities';
+import { IdentityService, type ResolvedIdentity } from '../common/identity/identity';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -89,7 +90,36 @@ export class AnnouncementsGateway implements OnGatewayInit, OnGatewayConnection,
     private readonly announcementService: AnnouncementService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly identityService: IdentityService,
   ) { }
+
+  private resolveSocketIdentity(client: AuthenticatedSocket): ResolvedIdentity {
+    const ipAddress = client.handshake.address;
+    const userAgent = (client.handshake.headers?.['user-agent'] as string) ?? 'unknown';
+    const fingerprintHash = this.identityService.fingerprint(ipAddress, userAgent);
+
+    if (client.user?.id) {
+      return {
+        type: 'authenticated',
+        identifier: String(client.user.id),
+        userId: client.user.id,
+        visitorId: null,
+        fingerprintHash,
+        ipAddress,
+        userAgent,
+      };
+    }
+
+    return {
+      type: 'anonymous',
+      identifier: fingerprintHash,
+      userId: null,
+      visitorId: null,
+      fingerprintHash,
+      ipAddress,
+      userAgent,
+    };
+  }
 
   afterInit(server: any) {
     this.logger.log('Announcements WebSocket Gateway initialized');
@@ -161,10 +191,11 @@ export class AnnouncementsGateway implements OnGatewayInit, OnGatewayConnection,
     }
 
     try {
+      const identity = this.resolveSocketIdentity(client);
       const result = await this.announcementService.addReaction(
         data.announcementId,
-        client.user.id,
         data.reactionType,
+        identity,
       );
 
       this.broadcastReactionUpdate(data.announcementId, {
@@ -221,28 +252,20 @@ export class AnnouncementsGateway implements OnGatewayInit, OnGatewayConnection,
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: ViewPayload,
   ) {
-    if (!client.user) {
-      return { success: false };
-    }
-
     try {
+      const identity = this.resolveSocketIdentity(client);
       const result = await this.announcementService.recordView(
         data.announcementId,
-        client.user.id,
-        client.handshake.address,
-        client.handshake.headers['user-agent'],
+        identity,
       );
 
       if (result.isNewView) {
-        // Broadcast view update
         this.broadcastViewUpdate(data.announcementId, {
           announcementId: data.announcementId,
           viewCount: result.viewCount,
-          viewer: {
-            id: client.user.id,
-            name: client.user.name,
-            viewedAt: new Date(),
-          },
+          viewer: client.user
+            ? { id: client.user.id, name: client.user.name, viewedAt: new Date() }
+            : undefined,
         });
       }
 
