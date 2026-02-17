@@ -12,7 +12,6 @@ import {
   ReactionCount,
   ViewerInfo
 } from './dto/announcements-response.dto';
-import { AllowAnonymous } from "@thallesp/nestjs-better-auth";
 
 @Injectable()
 export class AnnouncementService {

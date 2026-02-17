@@ -9,7 +9,7 @@ export class IdentityGuard implements CanActivate {
 
   canActivate(cxt: ExecutionContext): boolean {
     const req = cxt.switchToHttp().getRequest<Request>();
-    const res = cxt.switchToHttp().getRequest<Response>();
+    const res = cxt.switchToHttp().getResponse<Response>();
 
     const user = (req as any).user ?? null;
 
