@@ -105,7 +105,19 @@ export class AnnouncementController {
     @Body() dto: AddReactionDto,
     @Identity() identity: ResolvedIdentity,
   ) {
-    return this.announcementService.addReaction(id, dto.reactionType, identity);
+    const result = await this.announcementService.addReaction(id, dto.reactionType, identity);
+
+    // Broadcast real-time update via WebSocket
+    this.announcementsGateway.broadcastReactionUpdate(id, {
+      announcementId: id,
+      reactions: result.counts,
+      totalReactions: result.counts.reduce((sum, r) => sum + r.count, 0),
+      userId: identity.userId ?? 0,
+      reactionType: dto.reactionType,
+      action: 'add',
+    });
+
+    return result;
   }
 
   @Delete(':id/reactions')
@@ -115,7 +127,19 @@ export class AnnouncementController {
     @Param('id') id: string,
     @CurrentUser() user: User,
   ) {
-    return this.announcementService.removeReaction(id, user.id);
+    const result = await this.announcementService.removeReaction(id, user.id);
+
+    // Broadcast real-time update via WebSocket
+    this.announcementsGateway.broadcastReactionUpdate(id, {
+      announcementId: id,
+      reactions: result.counts,
+      totalReactions: result.counts.reduce((sum, r) => sum + r.count, 0),
+      userId: user.id,
+      reactionType: null,
+      action: 'remove',
+    });
+
+    return result;
   }
 
   @Post(':id/views')
@@ -125,8 +149,17 @@ export class AnnouncementController {
     @Param('id') id: string,
     @Identity() identity: ResolvedIdentity,
   ) {
+    const result = await this.announcementService.recordView(id, identity);
 
-    return this.announcementService.recordView(id, identity);;
+    // Broadcast real-time view count update via WebSocket
+    if (result.isNewView) {
+      this.announcementsGateway.broadcastViewUpdate(id, {
+        announcementId: id,
+        viewCount: result.viewCount,
+      });
+    }
+
+    return result;
   }
 
   @Get(':id/viewers')

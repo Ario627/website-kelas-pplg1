@@ -43,7 +43,7 @@ interface ViewPayload {
   announcementId: string;
 }
 
-interface ReactionUpdatePayload {
+export interface ReactionUpdatePayload {
   announcementId: string;
   reactions: { type: ReactionType; count: number }[];
   totalReactions: number;
@@ -52,7 +52,7 @@ interface ReactionUpdatePayload {
   action: 'add' | 'remove';
 }
 
-interface ViewUpdatePayload {
+export interface ViewUpdatePayload {
   announcementId: string;
   viewCount: number;
   viewer?: {
@@ -299,12 +299,13 @@ export class AnnouncementsGateway implements OnGatewayInit, OnGatewayConnection,
     this.logger.log(`📌 Broadcasted pin update: ${id} -> ${isPinned}`);
   }
 
-  private broadcastReactionUpdate(announcementId: string, data: ReactionUpdatePayload) {
+  broadcastReactionUpdate(announcementId: string, data: ReactionUpdatePayload) {
     this.server.to('announcements:global').emit('announcement:reaction', data);
     this.server.to(`announcement:${announcementId}`).emit('announcement:reaction', data);
   }
 
-  private broadcastViewUpdate(announcementId: string, data: ViewUpdatePayload) {
+  broadcastViewUpdate(announcementId: string, data: ViewUpdatePayload) {
+    this.server.to('announcements:global').emit('announcement:view', data);
     this.server.to(`announcement:${announcementId}`).emit('announcement:view', data);
   }
 
