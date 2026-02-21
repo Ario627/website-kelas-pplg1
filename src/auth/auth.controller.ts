@@ -51,10 +51,10 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { ttl: 60000, limit: 10 } })
-  async login(@Body() loginDto: LoginDto, @Req() req: Request, @Res({passthrough: true}) res: Response) {
+  async login(@Body() loginDto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const ipAddres = this.getClientIp(req);
     const userAgent = req.headers['user-agent'];
-    
+
     const result = await this.authService.login(loginDto, ipAddres, userAgent);
 
     res.cookie('access_token', result.access_token, {
@@ -64,7 +64,7 @@ export class AuthController {
       path: '/',
     });
 
-    return {user: result.user};
+    return { user: result.user };
   }
 
 

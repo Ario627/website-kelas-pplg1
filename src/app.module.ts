@@ -12,6 +12,8 @@ import { JwtModuleOptions } from '@nestjs/jwt';
 import type { StringValue } from 'ms';
 import { IdentityService } from './common/identity/identity';
 import { IdentityGuard } from './common/identity/identity.guard';
+import { GalleryModule } from './gallery/gallery.module';
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
 // Masih ada yang lainnnya tapi nanti ya belum di bikin
 
 @Module({
@@ -70,7 +72,9 @@ import { IdentityGuard } from './common/identity/identity.guard';
     AuthModule,
     UsersModule,
     AnnouncementModule,
+    GalleryModule,
     StatsModule,
+    CloudinaryModule
   ],
   providers: [IdentityService, IdentityGuard],
   exports: [IdentityService, IdentityGuard],

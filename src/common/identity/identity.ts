@@ -147,6 +147,6 @@ export class IdentityService {
       fingerprintHash,
       ipAddress,
       userAgent,
-    }
+    };
   }
 }

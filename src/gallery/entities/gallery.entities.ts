@@ -17,6 +17,7 @@ export enum GalleryType {
 @Entity('gallery_items')
 @Index(['category'])
 @Index(['type'])
+@Index(['isPublished', 'order'])
 export class GalleryItem {
   @PrimaryGeneratedColumn()
   id: number;
@@ -49,6 +50,12 @@ export class GalleryItem {
   @Column({ type: 'int', nullable: true })
   height: number;
 
+  @Column({type: 'int', nullable: true})
+  fileSize: number;
+
+  @Column({ length: 10, nullable: true })
+  format: string;
+
   //For video
   @Column({ length: 20, nullable: true })
   youtubeVideoId: string;
@@ -57,11 +64,14 @@ export class GalleryItem {
   @Column({ length: 100, nullable: true })
   category: string;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, default: [] })
   tags: string[];
 
   @Column({ type: 'int', default: 0 })
   order: number;
+
+  @Column({default: true})
+  isPublished: boolean;
 
   @ManyToOne(() => User, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'uploadedById' })

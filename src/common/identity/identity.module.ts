@@ -9,5 +9,4 @@ import { ConfigModule } from '@nestjs/config';
   providers: [IdentityService, IdentityGuard],
   exports: [IdentityService, IdentityGuard],
 })
-export class IdentityModule { }
-
+export class IdentityModule {}

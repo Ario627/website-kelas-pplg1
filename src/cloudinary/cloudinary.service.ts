@@ -3,7 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { v2 as cloudinary, UploadApiResponse, UploadApiErrorResponse } from "cloudinary";
 import * as streamifier from 'streamifier';
 
-export interface CloudinaryUploudResult {
+export interface CloudinaryUploadResult {
   publicId: string;
   url: string;
   secureUrl: string;
@@ -14,7 +14,7 @@ export interface CloudinaryUploudResult {
   thumbnailUrl: string;
 }
 
-export interface UploudOptions {
+export interface UploadOptions {
   folder?: string;
   maxWidth?: number;
   quality?: string;
@@ -34,13 +34,13 @@ export class CloudinaryService {
 
   async uploadImage(
     file: Express.Multer.File,
-    options?: UploudOptions,
-  ): Promise<CloudinaryUploudResult> {
+    options?: UploadOptions,
+  ): Promise<CloudinaryUploadResult> {
     const folder = options?.folder || this.defaultFolder;
     const maxWidth = options?.maxWidth || this.maxWidth;
 
     return new Promise((resolve, reject) => {
-      const uploudStream = cloudinary.uploader.upload_stream(
+      const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: `${this.defaultFolder}/${folder}`,
           resource_type: options?.resourceType || 'image',
@@ -49,7 +49,7 @@ export class CloudinaryService {
               width: maxWidth,
               crop: 'limit',
               quality: 'auto:good',
-              fetcch_format: 'auto',
+              fetch_format: 'auto',
             },
           ],
 
@@ -86,15 +86,15 @@ export class CloudinaryService {
         },
       );
 
-      streamifier.createReadStream(file.buffer).pipe(uploudStream);
+      streamifier.createReadStream(file.buffer).pipe(uploadStream);
     });
   }
 
 
-  async uploudFile(
+  async uploadFile(
     file: Express.Multer.File,
     folder?: string,
-  ): Promise<CloudinaryUploudResult> {
+  ): Promise<CloudinaryUploadResult> {
     const targetFolder = folder || 'files';
 
     return new Promise((resolve, reject) => {
