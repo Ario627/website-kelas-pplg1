@@ -22,6 +22,7 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { CurrentUser } from "src/common/decorators/current-user.decorators";
+import { AuthGuard } from "@nestjs/passport";
 
 
 @Controller('auth')
@@ -57,12 +58,7 @@ export class AuthController {
 
     const result = await this.authService.login(loginDto, ipAddres, userAgent);
 
-    res.cookie('access_token', result.access_token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      path: '/',
-    });
+    this.setAuthCookies(res, result.access_token, result.refresh_token);
 
     return { user: result.user };
   }
@@ -103,9 +99,55 @@ export class AuthController {
     }
   }
 
+  @Post('refresh')
+  @UseGuards(AuthGuard('jwt-refresh'))
+  @HttpCode(HttpStatus.OK)
+  async refresh(@CurrentUser() user: User & { refreshToken: string }, @Res({ passthrough: true }) res: Response) {
+    const tokens = await this.authService.refreshTokens(user.id, user.refreshToken);
+
+    this.setAuthCookies(res, tokens.access_token, tokens.refresh_token);
+
+    return { message: tokens.message };
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async logout(@CurrentUser() user: User, @Res({ passthrough: true }) res: Response) {
+    await this.authService.logout(user.id);
+
+    this.clearAuthCookies(res);
+
+    return { message: 'Logout successful' };
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async me(@CurrentUser() user: User) {
     return this.authService.getCurrentUser(user.id)
+  }
+
+  // --- Cookie helpers ---
+
+  private setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
+    res.cookie('access_token', accessToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+    });
+
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+  }
+
+  private clearAuthCookies(res: Response) {
+    res.clearCookie('access_token', { path: '/' });
+    res.clearCookie('refresh_token', { path: '/' });
   }
 }

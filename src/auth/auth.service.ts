@@ -29,15 +29,16 @@ export class AuthService {
   }
 
   //Pembuat access token dan refresh token dengan HELPER
-  async getTokens(userId: number, email: string, role: UserRole) {
-    const payload = { sub: userId, email, role };
+  async getTokens(userId: number, email: string, role: UserRole, tokenVersion?: number) {
+    const accessPayload = { sub: userId, email, role };
+    const refreshPayload = { sub: userId, email, role, tokenVersion };
 
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
+      this.jwtService.signAsync(accessPayload, {
         secret: this.configService.get<string>('JWT_SECRET'),
         expiresIn: '15m',
       }),
-      this.jwtService.signAsync(payload, {
+      this.jwtService.signAsync(refreshPayload, {
         secret: this.configService.get<string>('JWT_REFRESH'),
         expiresIn: '7d',
       }),
@@ -110,7 +111,7 @@ export class AuthService {
 
     await this.usersService.updateLoginInfo(user.id, ipAddress);
 
-    const tokens = await this.getTokens(user.id, user.email, user.role);
+    const tokens = await this.getTokens(user.id, user.email, user.role, user.tokenVersion);
 
     await this.updateRefreshToken(user.id, tokens.refresh_token);
 
@@ -125,7 +126,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
-        regristrationStatus: user.registrationStatus,
+        registrationStatus: user.registrationStatus,
       },
     };
   }
@@ -151,7 +152,7 @@ export class AuthService {
       throw new ForbiddenException('Access denied');
     }
 
-    const token = await this.getTokens(user.id, user.email, user.role);
+    const token = await this.getTokens(user.id, user.email, user.role, user.tokenVersion);
 
     await this.updateRefreshToken(user.id, token.refresh_token);
 
