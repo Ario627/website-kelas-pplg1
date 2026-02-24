@@ -1,10 +1,12 @@
 import { User } from "src/users/entities/user.entities";
+import { GalleryView } from "./gallery-view.entities";
 import {
   Entity,
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
   Index,
 } from "typeorm";
@@ -50,7 +52,7 @@ export class GalleryItem {
   @Column({ type: 'int', nullable: true })
   height: number;
 
-  @Column({type: 'int', nullable: true})
+  @Column({ type: 'int', nullable: true })
   fileSize: number;
 
   @Column({ length: 10, nullable: true })
@@ -70,7 +72,7 @@ export class GalleryItem {
   @Column({ type: 'int', default: 0 })
   order: number;
 
-  @Column({default: true})
+  @Column({ default: true })
   isPublished: boolean;
 
   @ManyToOne(() => User, { onDelete: 'SET NULL' })
@@ -79,6 +81,15 @@ export class GalleryItem {
 
   @Column({ nullable: true })
   uploadedById: number;
+
+  @Column({ type: 'int', default: 0 })
+  viewCount: number;
+
+  @Column({ default: true })
+  enableViews: boolean;
+
+  @OneToMany(() => GalleryView, (v) => v.galleryItem)
+  views: GalleryView[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   uploadedAt: Date;

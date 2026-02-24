@@ -1,12 +1,14 @@
-import { Injectable, NotAcceptableException, Logger, BadRequestException } from "@nestjs/common";
+import { Injectable, NotAcceptableException, Logger, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In } from "typeorm";
 import { GalleryItem, GalleryType } from "./entities/gallery.entities";
+import { GalleryView } from "./entities/gallery-view.entities";
 import { CreateImageDto } from "./dto/create-image.dto";
 import { CreateVideoDto } from "./dto/create-video.dto";
 import { UpdateGalleryDto } from "./dto/update-gallery.dto";
 import { ReorderGalleryDto } from "./dto/reorder-gallery.dto";
 import { CloudinaryService } from "src/cloudinary/cloudinary.service";
+import type { ResolvedIdentity } from "src/common/identity/identity";
 
 @Injectable()
 export class GalleryService {
@@ -15,6 +17,8 @@ export class GalleryService {
   constructor(
     @InjectRepository(GalleryItem)
     private readonly galleryRepository: Repository<GalleryItem>,
+    @InjectRepository(GalleryView)
+    private readonly viewRepository: Repository<GalleryView>,
     private readonly cloudinaryService: CloudinaryService,
   ) { }
 
@@ -200,6 +204,81 @@ export class GalleryService {
     }
 
     return item;
+  }
+
+  async recordView(
+    galleryItemId: number,
+    identity: ResolvedIdentity,
+  ): Promise<{ isNewView: boolean; viewCount: number }> {
+    const item = await this.galleryRepository.findOne({
+      where: { id: galleryItemId },
+    });
+
+    if (!item) throw new ForbiddenException('Gallery item not found');
+
+    if (!item.enableViews) {
+      return { isNewView: false, viewCount: item.viewCount };
+    }
+
+    const existing = await this.findExistingViewRecord(galleryItemId, identity);
+
+    if (existing) {
+      if (identity.userId && !existing.userId) {
+        existing.userId = identity.userId;
+        await this.viewRepository.save(existing);
+        this.logger.log(`Existing gallery view updated with User ID: ${identity.userId} for Item ID: ${galleryItemId}`);
+      }
+      return { isNewView: false, viewCount: item.viewCount };
+    }
+
+    await this.viewRepository.save(
+      this.viewRepository.create({
+        galleryItemId,
+        userId: identity.userId ?? undefined,
+        visitorId: identity.visitorId,
+        fingerprintHash: identity.fingerprintHash,
+        ipAddress: identity.ipAddress,
+        userAgent: identity.userAgent,
+      }),
+    );
+
+    await this.galleryRepository.increment({ id: galleryItemId }, 'viewCount', 1);
+
+    this.logger.debug(`View recorded for gallery item ${galleryItemId} via ${identity.type} (${identity.identifier.substring(0, 8)}...)`);
+
+    return { isNewView: true, viewCount: item.viewCount + 1 };
+  }
+
+  async getViewCount(galleryItemId: number): Promise<number> {
+    return this.viewRepository.count({ where: { galleryItemId } });
+  }
+
+  private async findExistingViewRecord(
+    galleryItemId: number,
+    identity: ResolvedIdentity,
+  ): Promise<GalleryView | null> {
+    if (identity.userId) {
+      const found = await this.viewRepository.findOne({
+        where: { galleryItemId, userId: identity.userId },
+      });
+      if (found) return found;
+    }
+
+    if (identity.visitorId) {
+      const found = await this.viewRepository.findOne({
+        where: { galleryItemId, visitorId: identity.visitorId },
+      });
+      if (found) return found;
+    }
+
+    if (identity.fingerprintHash) {
+      const found = await this.viewRepository.findOne({
+        where: { galleryItemId, fingerprintHash: identity.fingerprintHash },
+      });
+      if (found) return found;
+    }
+
+    return null;
   }
 }
 

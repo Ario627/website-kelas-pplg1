@@ -29,6 +29,9 @@ import { UserRole, User } from 'src/users/entities/user.entities';
 import { Roles } from 'src/common/decorators/roles.decorators';
 import { CurrentUser } from 'src/common/decorators/current-user.decorators';
 import { Throttle } from '@nestjs/throttler';
+import { OptionalJwtAuthGUard } from 'src/common/guards/optional-jwt-auth.guard';
+import { IdentityGuard } from 'src/common/identity/identity.guard';
+import { Identity, type ResolvedIdentity } from 'src/common/identity/identity';
 
 @Controller('gallery')
 export class GalleryController {
@@ -62,6 +65,16 @@ export class GalleryController {
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.galleryService.findOne(id);
+  }
+
+  @Post(':id/views')
+  @UseGuards(OptionalJwtAuthGUard, IdentityGuard)
+  @HttpCode(HttpStatus.OK)
+  async recordView(
+    @Param('id', ParseIntPipe) id: number,
+    @Identity() identity: ResolvedIdentity,
+  ) {
+    return this.galleryService.recordView(id, identity);
   }
 
   @Get('admin/all')
