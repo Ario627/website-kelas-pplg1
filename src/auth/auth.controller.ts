@@ -95,7 +95,7 @@ export class AuthController {
       const result = await this.authService.rejectRegristration(token, reason);
       return res.redirect(result.redirectUrl);
     } catch (error) {
-      return res.redirect(`/error?meesage=${encodeURIComponent(error.message)}`);
+      return res.redirect(`/error?message=${encodeURIComponent(error.message)}`);
     }
   }
 
@@ -132,7 +132,7 @@ export class AuthController {
   private setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
     res.cookie('access_token', accessToken, {
       httpOnly: true,
-      secure: false,
+      secure: true,
       sameSite: 'lax',
       path: '/',
     });

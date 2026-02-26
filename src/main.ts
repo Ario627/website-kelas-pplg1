@@ -67,9 +67,7 @@ async function bootstrap() {
   const port = configService.get<number>('PORT') || 3000;
   await app.listen(port);
 
-  // Set WebSocket adapter AFTER app.listen() so the HTTP server is available
-  // This fixes Express 5 incompatibility where app instance doesn't expose
-  // a proper http.Server with EventEmitter methods like .listeners()
+
   const httpServer = app.getHttpServer();
   app.useWebSocketAdapter(new IoAdapter(httpServer));
   logger.log('WebSocket adapter set to IoAdapter');

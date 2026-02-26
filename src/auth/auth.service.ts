@@ -61,7 +61,7 @@ export class AuthService {
   async register(registerDto: RegisterDto, ipAddress?: string, userAgent?: string) {
     const existingUser = await this.usersService.findByEmail(registerDto.email);
     if (existingUser) {
-      return new ConflictException('Email already in use');
+      throw new ConflictException('Email already in use');
     }
 
     const saltRounds = 12;
@@ -84,7 +84,7 @@ export class AuthService {
     return {
       message: 'Registration successful',
       status: 'approved',
-      emaill: user.email,
+      email: user.email,
       debugToken: process.env.NODE_ENV === 'development' ? registrationToken : undefined,
     };
   }
