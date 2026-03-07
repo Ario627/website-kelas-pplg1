@@ -6,7 +6,7 @@ import { RegisterDto } from "./dto/register.dto";
 import { Roles } from "src/common/decorators/roles.decorators";
 import { RolesGuard } from "src/common/guards/role.guard";
 import { User, UserRole } from "src/users/entities/user.entities";
-import { SkipThrottle, Throttle } from "@nestjs/throttler";
+import { Throttle } from "@nestjs/throttler";
 import {
   Controller,
   Post,

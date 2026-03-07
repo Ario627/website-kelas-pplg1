@@ -76,7 +76,7 @@ export class CloudinaryService {
           resolve({
             publicId: result.public_id,
             url: result.url,
-            secureUrl: result.secure_url,
+            secureUrl: this.generateOptimizedUrl(result.public_id, maxWidth),
             width: result.width,
             height: result.height,
             format: result.format,
@@ -145,6 +145,23 @@ export class CloudinaryService {
   }
 
 
+
+  generateOptimizedUrl(publicId: string, maxWidth?: number): string {
+    const transformation: Record<string, unknown> = {
+      quality: 'auto',
+      fetch_format: 'auto',
+    };
+
+    if (maxWidth) {
+      transformation.width = maxWidth;
+      transformation.crop = 'limit';
+    }
+
+    return cloudinary.url(publicId, {
+      secure: true,
+      transformation: [transformation],
+    });
+  }
 
   generateThumbnailUrl(publicId: string, size: number = 400): string {
     return cloudinary.url(publicId, {
