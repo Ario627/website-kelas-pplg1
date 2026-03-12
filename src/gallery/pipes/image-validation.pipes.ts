@@ -9,6 +9,8 @@ export class ImageValidation implements PipeTransform {
     'image/webp',
     'image/gif',
     'image/avif',
+    'image/heic',
+    'image/heif',
   ];
 
   transform(file: Express.Multer.File): Express.Multer.File {

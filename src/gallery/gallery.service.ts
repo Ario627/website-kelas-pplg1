@@ -1,14 +1,35 @@
-import { Injectable, NotAcceptableException, Logger, BadRequestException, ForbiddenException } from "@nestjs/common";
+import { Injectable, NotAcceptableException, Logger, NotFoundException, BadRequestException, ForbiddenException, Inject } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, In } from "typeorm";
+import { Repository, In, MoreThan, LessThan } from "typeorm";
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import type { Cache } from "cache-manager";
 import { GalleryItem, GalleryType } from "./entities/gallery.entities";
 import { GalleryView } from "./entities/gallery-view.entities";
+import { GalleryAlbum } from "./entities/gallery-album.entities";
 import { CreateImageDto } from "./dto/create-image.dto";
 import { CreateVideoDto } from "./dto/create-video.dto";
+import { CreateLivePhotoDto } from "./dto/create-live-photo.dto";
+import { CreateAlbumDto } from "./dto/create-album.dto";
+import { UpdateAlbumDto } from "./dto/update-album.dto";
 import { UpdateGalleryDto } from "./dto/update-gallery.dto";
 import { ReorderGalleryDto } from "./dto/reorder-gallery.dto";
-import { CloudinaryService } from "src/cloudinary/cloudinary.service";
+import { CloudinaryService, type CloudinaryUploadResult, type ResponsiveUrls } from "src/cloudinary/cloudinary.service";
 import type { ResolvedIdentity } from "src/common/identity/identity";
+
+
+export interface GalleryItemResponse extends GalleryItem {
+  responsive?: ResponsiveUrls;
+  liveVideoMp4Url?: string | null;
+}
+
+export interface CursorPaginatedResult<T> {
+  data: T[];
+  meta: {
+    hasMore: boolean;
+    nextCursor: number | null;
+    total: number;
+  };
+}
 
 @Injectable()
 export class GalleryService {
@@ -19,7 +40,10 @@ export class GalleryService {
     private readonly galleryRepository: Repository<GalleryItem>,
     @InjectRepository(GalleryView)
     private readonly viewRepository: Repository<GalleryView>,
+    @InjectRepository(GalleryAlbum)
+    private readonly albumRepo: Repository<GalleryAlbum>,
     private readonly cloudinaryService: CloudinaryService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) { }
 
   async createImage(dto: CreateImageDto, file: Express.Multer.File, uploadedById: number): Promise<GalleryItem> {
@@ -65,12 +89,49 @@ export class GalleryService {
     return save;
   }
 
+  async createLivePhoto(dto: CreateLivePhotoDto, imageFile: Express.Multer.File, videoFile: Express.Multer.File | undefined, uploadedById: number): Promise<GalleryItemResponse> {
+    const imageResult = await this.cloudinaryService.uploadImage(imageFile, {
+      folder: 'gallery/live-photos',
+      maxWidth: 1920,
+    });
+
+    let videoResult: CloudinaryUploadResult | null = null;
+    if (videoFile) {
+      videoResult = await this.cloudinaryService.uploadLivePhotoVideo(videoFile, 'gallery/live-photos');
+    }
+
+    const item = this.galleryRepository.create({
+      ...dto,
+      type: GalleryType.LIVE_PHOTO,
+      isLivePhoto: true,
+      cloudinaryPublicId: imageResult.publicId,
+      imageUrl: imageResult.secureUrl,
+      thumbnailUrl: imageResult.thumbnailUrl,
+      width: imageResult.width,
+      height: imageResult.height,
+      fileSize: imageResult.bytes + (videoResult?.bytes ?? 0),
+      format: imageResult.format,
+      liveVideoPublicId: videoResult?.publicId ?? null,
+      liveVideoUrl: videoResult?.secureUrl ?? null,
+      tags: dto.tags ?? [],
+      isPublished: dto.isPublished ?? true,
+      uploadedById
+    });
+
+    const saved = await this.galleryRepository.save(item);
+    await this.invalidateGalleryCache();
+    this.logger.log(`Created live photo gallery item with ID ${saved.id} by user ${uploadedById}`);
+    return this.enrichWithResponsiveUrls(saved);
+  }
+
+
   async update(id: number, dto: UpdateGalleryDto): Promise<GalleryItem> {
     const item = await this.findOrFail(id);
 
     Object.assign(item, dto);
 
     const saved = await this.galleryRepository.save(item);
+    await this.invalidateGalleryCache();
     this.logger.log(`Updated gallery item with ID {id}`);
     return saved;
   }
@@ -91,6 +152,7 @@ export class GalleryService {
     }
 
     await this.galleryRepository.save(items);
+    await this.invalidateGalleryCache()
     this.logger.log(`Reordered ${items.length} gallery items`);
     return { updated: items.length };
   }
@@ -106,18 +168,22 @@ export class GalleryService {
     }
 
     await this.galleryRepository.remove(item);
+    await this.invalidateGalleryCache()
     this.logger.log(`Deleted gallery item with ID ${id}`);
   }
 
   async findAllPublished(query?: {
     type?: GalleryType;
     category?: string;
-    page?: number;
+    cursor?: number;
     limit?: number;
-  }): Promise<{ data: GalleryItem[]; total: number; page: number; totalPages: number }> {
-    const page = query?.page ?? 1;
-    const limit = Math.min(query?.limit ?? 20, 50); // Max 50 per page
-    const skip = (page - 1) * limit;
+  }): Promise<CursorPaginatedResult<GalleryItemResponse>> {
+    const limit = Math.min(query?.limit ?? 20, 50);
+
+    // Cache key berdasarkan query params
+    const cacheKey = `gallery:list:${query?.type ?? 'all'}:${query?.category ?? 'all'}:${query?.cursor ?? 0}:${limit}`;
+    const cached = await this.cache.get<CursorPaginatedResult<GalleryItemResponse>>(cacheKey);
+    if (cached) return cached;
 
     const qb = this.galleryRepository.createQueryBuilder('g')
       .leftJoin('g.uploadedBy', 'uploader')
@@ -132,47 +198,68 @@ export class GalleryService {
       qb.andWhere('g.category = :category', { category: query.category });
     }
 
+    // Cursor-based: ambil items setelah cursor ID
+    if (query?.cursor) {
+      qb.andWhere('g.id < :cursor', { cursor: query.cursor });
+    }
+
     qb.orderBy('g.order', 'ASC')
-      .addOrderBy('g.createdAt', 'DESC')
-      .skip(skip)
-      .take(limit);
+      .addOrderBy('g.id', 'DESC')
+      .take(limit + 1); // +1 buat check hasMore
 
-    const [data, total] = await qb.getManyAndCount();
+    const items = await qb.getMany();
+    const hasMore = items.length > limit;
+    if (hasMore) items.pop(); // Buang item ke-limit+1
 
-    return {
-      data,
-      total,
-      page,
-      totalPages: Math.ceil(total / limit),
+    const total = await this.galleryRepository.count({ where: { isPublished: true } });
+
+    const result: CursorPaginatedResult<GalleryItemResponse> = {
+      data: items.map((item) => this.enrichWithResponsiveUrls(item)),
+      meta: {
+        hasMore,
+        nextCursor: hasMore && items.length > 0 ? items[items.length - 1].id : null,
+        total,
+      },
     };
+
+    // Cache 5 menit
+    await this.cache.set(cacheKey, result, 300_000);
+    return result;
   }
 
-  async findAllAdmin(): Promise<GalleryItem[]> {
-    return this.galleryRepository.find({
+  async findAllAdmin(): Promise<GalleryItemResponse[]> {
+    const items = await this.galleryRepository.find({
       relations: ['uploadedBy'],
       order: { order: 'ASC', createdAt: 'DESC' },
       select: {
         uploadedBy: { id: true, name: true },
       },
     });
+
+    return items.map((item) => this.enrichWithResponsiveUrls(item));
   }
 
   async findOne(id: number): Promise<GalleryItem> {
-    return this.findOrFail(id);
+    const cacheKey = `gallery:item:${id}`;
+    const cached = await this.cache.get<GalleryItemResponse>(cacheKey);
+    if (cached) return cached;
+
+    const item = await this.findOrFail(id);
+    const enriched = this.enrichWithResponsiveUrls(item);
+
+    await this.cache.set(cacheKey, enriched, 300_000); // Cache 5 menit
+    return enriched;
   }
 
-  async findByType(type: GalleryType): Promise<GalleryItem[]> {
-    return this.galleryRepository.find({
-      where: { type, isPublished: true },
-      relations: ['uploadedBy'],
-      order: { order: 'ASC', createdAt: 'DESC' },
-      select: {
-        uploadedBy: { id: true, name: true },
-      },
-    });
+  async findByType(type: GalleryType, cursor?: number, limit: number = 20): Promise<CursorPaginatedResult<GalleryItemResponse>> {
+    return this.findAllPublished({ type, cursor, limit });
   }
 
-  async getCategories(): Promise<{ category: string; count: number }[]> {
+  async getCategoried(): Promise<{ category: string; count: number }[]> {
+    const cacheKey = `gallery:categories`;
+    const cached = await this.cache.get<{ category: string; count: number }[]>(cacheKey);
+    if (cached) return cached;
+
     const result = await this.galleryRepository
       .createQueryBuilder('g')
       .select('g.category', 'category')
@@ -183,10 +270,162 @@ export class GalleryService {
       .orderBy('count', 'DESC')
       .getRawMany();
 
-    return result.map((r) => ({
+    const mapped = result.map((r) => ({
       category: r.category,
       count: parseInt(r.count, 10),
     }));
+
+    await this.cache.set(cacheKey, mapped, 300_000);
+    return mapped;
+  }
+
+  //  Album 
+
+  async createAlbum(dto: CreateAlbumDto, createById: number): Promise<GalleryAlbum> {
+    const album = this.albumRepo.create({
+      title: dto.title,
+      description: dto.description,
+      isPublished: dto.isPublished ?? true,
+      order: dto.order ?? 0,
+      createById,
+    });
+
+    const saved = await this.albumRepo.save(album);
+
+    if (dto.itemIds?.length) {
+      await this.addItemsToAlbum(saved.id, dto.itemIds);
+    }
+
+    await this.invalidateGalleryCache();
+    this.logger.log(`Created gallery album with ID ${saved.id} by user ${createById}`);
+    return this.findAlbumOrFail(saved.id);
+  }
+
+  async findAllAlbums(published = true): Promise<GalleryAlbum[]> {
+    const cacheKey = `gallery:albums:${published}`;
+    const cached = await this.cache.get<GalleryAlbum[]>(cacheKey);
+    if (cached) return cached;
+
+    const where = published ? { isPublished: true } : {};
+    const albums = await this.albumRepo.find({
+      where,
+      relations: ['createdBy'],
+      order: { order: 'ASC', createdAt: 'DESC' },
+      select: {
+        createdBy: { id: true, name: true },
+      },
+    });
+
+    await this.cache.set(cacheKey, albums, 300_000);
+    return albums;
+  }
+
+  async findAlbumWithItems(albumId: number): Promise<GalleryAlbum & { items: GalleryItemResponse[] }> {
+    const cacheKey = `gallery:album:${albumId}`;
+    const cached = await this.cache.get<GalleryAlbum & { items: GalleryItemResponse[] }>(cacheKey);
+
+    if (cached) return cached;
+
+    const album = await this.albumRepo.findOne({
+      where: { id: albumId },
+      relations: ['items', 'items.uploadedBy', 'createdBy'],
+      select: {
+        createdBy: { id: true, name: true },
+        items: {
+          id: true, title: true, description: true, type: true,
+          cloudinaryPublicId: true, imageUrl: true, thumbnailUrl: true,
+          width: true, height: true, youtubeVideoId: true,
+          isLivePhoto: true, liveVideoPublicId: true, liveVideoUrl: true,
+          category: true, tags: true, order: true, viewCount: true,
+          createdAt: true,
+          uploadedBy: { id: true, name: true },
+        },
+      },
+    });
+
+    if (!album) throw new NotFoundException(`Album ID ${albumId} tidak ditemukan`);
+
+    const result = {
+      ...album,
+      items: album.items.map((item) => this.enrichWithResponsiveUrls(item)),
+    }
+
+    await this.cache.set(cacheKey, result, 300_000);
+    return result;
+  }
+
+  async updateAlbum(id: number, dto: UpdateAlbumDto): Promise<GalleryAlbum> {
+    const album = await this.findAlbumWithItems(id);
+
+    if (dto.coverItemId) {
+      const coverItem = await this.findOrFail(dto.coverItemId);
+      album.coverPublicId = coverItem.cloudinaryPublicId;
+      album.coverUrl = coverItem.thumbnailUrl;
+      delete (dto as any).coverItemId;
+    }
+
+    Object.assign(album, dto);
+    const saved = await this.albumRepo.save(album);
+    await this.invalidateGalleryCache();
+    return saved;
+  }
+
+  async deleteAlbum(id: number): Promise<void> {
+    const album = await this.findAlbumOrFail(id);
+    await this.albumRepo.remove(album);
+    await this.invalidateGalleryCache();
+    this.logger.log(`Deleted gallery album with ID ${id}`);
+  }
+
+
+
+  async addItemsToAlbum(albumId: number, itemIds: number[]): Promise<GalleryAlbum> {
+    const album = await this.albumRepo.findOne({
+      where: { id: albumId },
+      relations: ['items'],
+    });
+    if (!album) throw new NotFoundException(`Album ID ${albumId} tidak ditemukan`);
+
+    const items = await this.galleryRepository.find({ where: { id: In(itemIds) } });
+    if (items.length !== itemIds.length) {
+      const found = items.map((i) => i.id);
+      const missing = itemIds.filter((id) => !found.includes(id));
+      throw new BadRequestException(`Gallery items not found: ${missing.join(', ')}`);
+    }
+
+    // Merge — hindari duplicate
+    const existingIds = new Set(album.items.map((i) => i.id));
+    const newItems = items.filter((i) => !existingIds.has(i.id));
+    album.items = [...album.items, ...newItems];
+    album.itemCount = album.items.length;
+
+    // Auto-set cover kalau belum ada
+    if (!album.coverPublicId && album.items.length > 0) {
+      const firstImage = album.items.find((i) => i.cloudinaryPublicId);
+      if (firstImage) {
+        album.coverPublicId = firstImage.cloudinaryPublicId;
+        album.coverUrl = firstImage.thumbnailUrl;
+      }
+    }
+
+    await this.albumRepo.save(album);
+    await this.invalidateGalleryCache();
+    return this.findAlbumOrFail(albumId);
+
+  }
+
+  async removeItemsFromAlbum(albumId: number, itemIds: number[]): Promise<GalleryAlbum> {
+    const album = await this.albumRepo.findOne({
+      where: { id: albumId },
+      relations: ['items'],
+    });
+    if (!album) throw new NotFoundException(`Album ID ${albumId} tidak ditemukan`);
+
+    album.items = album.items.filter((i) => !itemIds.includes(i.id));
+    album.itemCount = album.items.length;
+    await this.albumRepo.save(album);
+    await this.invalidateGalleryCache();
+    return this.findAlbumOrFail(albumId);
   }
 
 
@@ -246,6 +485,8 @@ export class GalleryService {
 
     this.logger.debug(`View recorded for gallery item ${galleryItemId} via ${identity.type} (${identity.identifier.substring(0, 8)}...)`);
 
+    await this.cache.del(`gallery:item:${galleryItemId}`);
+
     return { isNewView: true, viewCount: item.viewCount + 1 };
   }
 
@@ -279,6 +520,37 @@ export class GalleryService {
     }
 
     return null;
+  }
+
+  private async invalidateGalleryCache(): Promise<void> {
+    await this.cache.del('gallery:categories');
+
+    await this.cache.clear();
+
+    this.logger.debug('Gallery cache invalidated');
+  }
+
+  private enrichWithResponsiveUrls(item: GalleryItem): GalleryItemResponse {
+    const response = item as GalleryItemResponse;
+
+    if (item.cloudinaryPublicId) {
+      response.responsive = this.cloudinaryService.generateResponsiveUrls(item.cloudinaryPublicId)
+    }
+    if (item.isLivePhoto && item.liveVideoPublicId) {
+      response.liveVideoMp4Url = this.cloudinaryService.generateThumbnailUrl(item.liveVideoPublicId, 0);
+    }
+    return response;
+  }
+
+  private async findAlbumOrFail(id: number): Promise<GalleryAlbum> {
+    const album = await this.albumRepo.findOne({
+      where: { id },
+      relations: ['createdBy'],
+      select: { createdBy: { id: true, name: true } },
+    });
+
+    if (!album) throw new NotFoundException(`Album ID ${id} tidak ditemukan`);
+    return album;
   }
 }
 

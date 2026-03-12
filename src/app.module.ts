@@ -14,6 +14,7 @@ import { IdentityService } from './common/identity/identity';
 import { IdentityGuard } from './common/identity/identity.guard';
 import { GalleryModule } from './gallery/gallery.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
+import { CacheModule } from '@nestjs/cache-manager';
 // Masih ada yang lainnnya tapi nanti ya belum di bikin
 
 @Module({
@@ -21,6 +22,12 @@ import { CloudinaryModule } from './cloudinary/cloudinary.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+
+    CacheModule.register({
+      isGlobal: true,
+      ttl: 300_000,
+      max: 200,
     }),
 
     JwtModule.registerAsync({

@@ -1,5 +1,6 @@
 import { User } from "src/users/entities/user.entities";
 import { GalleryView } from "./gallery-view.entities";
+import { GalleryAlbum } from "./gallery-album.entities";
 import {
   Entity,
   Column,
@@ -9,17 +10,21 @@ import {
   OneToMany,
   JoinColumn,
   Index,
+  UpdateDateColumn,
+  ManyToMany,
 } from "typeorm";
 
 export enum GalleryType {
   IMAGE = 'image',
   VIDEO = 'video',
+  LIVE_PHOTO = 'live_photo',
 }
 
 @Entity('gallery_items')
 @Index(['category'])
 @Index(['type'])
 @Index(['isPublished', 'order'])
+@Index(['createdAt'])
 export class GalleryItem {
   @PrimaryGeneratedColumn()
   id: number;
@@ -62,6 +67,22 @@ export class GalleryItem {
   @Column({ length: 20, nullable: true })
   youtubeVideoId: string;
 
+  // ─── Live Photo fields (NEW) ───
+  @Column({ default: false })
+  isLivePhoto: boolean;
+
+  /** Cloudinary public ID untuk video component (.MOV) */
+  @Column({ type: 'varchar', length: 250, nullable: true })
+  liveVideoPublicId: string | null;
+
+  /** URL video component dari Live Photo */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  liveVideoUrl: string | null;
+
+  /** Duration video component dalam seconds */
+  @Column({ type: 'float', nullable: true })
+  liveVideoDuration: number | null;
+
   //Metadata
   @Column({ length: 100, nullable: true })
   category: string;
@@ -91,7 +112,10 @@ export class GalleryItem {
   @OneToMany(() => GalleryView, (v) => v.galleryItem)
   views: GalleryView[];
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @ManyToMany(() => GalleryAlbum, (album) => album.items)
+  albums: GalleryAlbum[];
+
+  @UpdateDateColumn({ type: 'timestamptz' })
   uploadedAt: Date;
 
   @CreateDateColumn({ type: 'timestamptz' })

@@ -21,6 +21,14 @@ export interface UploadOptions {
   resourceType?: 'image' | 'video' | 'raw' | 'auto';
 }
 
+export interface ResponsiveUrls {
+  thumbnail: string;
+  small: string;
+  medium: string;
+  large: string;
+  full: string;
+}
+
 @Injectable()
 export class CloudinaryService {
   private readonly logger = new Logger(CloudinaryService.name);
@@ -90,6 +98,52 @@ export class CloudinaryService {
     });
   }
 
+  async uploadLivePhotoVideo(
+    file: Express.Multer.File,
+    folder?: string,
+  ): Promise<CloudinaryUploadResult> {
+    const targetFolder = folder || 'gallery/live-photos';
+
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: `${this.defaultFolder}/${targetFolder}`,
+          resource_type: 'video',
+          eager: [{
+            format: 'mp4', video: 'h264', quality: 'auto',
+          }],
+          eager_async: true,
+        },
+        (error, result) => {
+          if (error) {
+            this.logger.error(`Live Photo video upload error: ${error.message}`);
+            reject(new BadRequestException(`Live Photo video upload error: ${error.message}`));
+            return;
+          }
+
+          if (!result) {
+            reject(new BadRequestException(new BadRequestException('Live Photo video upload failed')));
+            return;
+          }
+
+          this.logger.log(`Live Photo video uploaded: ${result.public_id}`)
+
+          resolve({
+            publicId: result.public_id,
+            url: result.url,
+            secureUrl: result.secure_url,
+            width: result.width ?? 0,
+            height: result.height ?? 0,
+            format: result.format || 'mov',
+            bytes: result.bytes,
+            thumbnailUrl: '',
+          });
+        },
+      );
+      streamifier.createReadStream(file.buffer).pipe(uploadStream);
+    });
+  }
+
 
   async uploadFile(
     file: Express.Multer.File,
@@ -150,6 +204,7 @@ export class CloudinaryService {
     const transformation: Record<string, unknown> = {
       quality: 'auto',
       fetch_format: 'auto',
+      dpr: 'auto',
     };
 
     if (maxWidth) {
@@ -173,8 +228,37 @@ export class CloudinaryService {
           crop: 'fill',
           quality: 'auto',
           fetch_format: 'auto',
-        }
-      ]
-    })
+          dpr: 'auto',
+        },
+      ],
+    });
   }
+
+  generateResponsiveUrls(publicId: string): ResponsiveUrls {
+    const base = { quality: 'auto', fetch_format: 'auto', crop: 'limit' as const };
+
+    return {
+      thumbnail: cloudinary.url(publicId, {
+        secure: true,
+        transformation: [{ ...base, width: 200, height: 200, crop: 'fill' }],
+      }),
+      small: cloudinary.url(publicId, {
+        secure: true,
+        transformation: [{ ...base, width: 400 }],
+      }),
+      medium: cloudinary.url(publicId, {
+        secure: true,
+        transformation: [{ ...base, width: 800 }],
+      }),
+      large: cloudinary.url(publicId, {
+        secure: true,
+        transformation: [{ ...base, width: 1200 }],
+      }),
+      full: cloudinary.url(publicId, {
+        secure: true,
+        transformation: [{ ...base, width: 1920 }],
+      }),
+    };
+  }
+
 }
