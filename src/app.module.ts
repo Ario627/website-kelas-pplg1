@@ -15,9 +15,11 @@ import { IdentityGuard } from './common/identity/identity.guard';
 import { GalleryModule } from './gallery/gallery.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { CacheModule } from '@nestjs/cache-manager';
+import { AppController } from './app.controller';
 // Masih ada yang lainnnya tapi nanti ya belum di bikin
 
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
